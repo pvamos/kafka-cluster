@@ -1,4 +1,4 @@
-# Kafka cluster seployment with Helm & Strimzi
+# Kafka cluster deployment with Helm & Strimzi
 
 This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi** and **Helm**.
 
@@ -62,16 +62,16 @@ kafka-cluster/
 ├── kafka-local-storage/          # Helm chart for Kafka local storage (PVs & StorageClass)
 │   ├── templates/                # Templates for Kubernetes resources
 │   │   ├── storageclass.yaml     # Defines the StorageClass for Kafka
-│   │   ├── pv.yaml               # Defines PersistentVolumes for Kafka nodes
+│   │   └── pv.yaml               # Defines PersistentVolumes for Kafka nodes
 │   ├── Chart.yaml                # Helm chart metadata
-│   ├── values.yaml               # Configurable values for storage (size, nodes, etc.)
+│   └── values.yaml               # Configurable values for storage (size, nodes, etc.)
 │
 ├── kafka-deployment/             # Helm chart for Kafka deployment with Strimzi
 │   ├── templates/                # Templates for Kubernetes resources
 │   │   ├── kafka-cluster.yaml    # Defines Kafka and Zookeeper cluster
-│   │   ├── kafka-pvc.yaml        # Defines Kafka PersistentVolumeClaims (PVCs)
+│   │   └── kafka-pvc.yaml        # Defines Kafka PersistentVolumeClaims (PVCs)
 │   ├── Chart.yaml                # Helm chart metadata
-│   ├── values.yaml               # Configurable values for Kafka/Zookeeper
+│   └── values.yaml               # Configurable values for Kafka/Zookeeper
 │
 ├── install.sh                    # Shell script to automate Helm chart installation
 ├── LICENSE                       # MIT License
