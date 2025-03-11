@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kafka-local-storage
+description: A Helm chart for creating local PersistentVolumes and StorageClass for Kafka
+type: application
+version: 1.0.0
+appVersion: 1.0.0
+

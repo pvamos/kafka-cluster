@@ -1,0 +1,23 @@
+# StorageClass configuration for Kafka local storage
+storageClass:
+  name: kafka-local
+
+# PVC size per Kafka broker: 25Gi
+# to avoid any filesystem overhead issues on the larger /dev/sda2 ext4 volumes
+persistentVolumeSize: 25Gi
+
+# PersistentVolumes definitions for each Kafka node
+persistentVolumes:
+  - name: kafka1-pv
+    node: kafka1
+    path: /var/lib/kafka
+  - name: kafka2-pv
+    node: kafka2
+    path: /var/lib/kafka
+  - name: kafka3-pv
+    node: kafka3
+    path: /var/lib/kafka
+  - name: kafka4-pv
+    node: kafka4
+    path: /var/lib/kafka
+

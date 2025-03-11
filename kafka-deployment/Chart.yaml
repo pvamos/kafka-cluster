@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kafka-deployment
+description: A Helm chart for deploying Kafka and Zookeeper using Strimzi
+type: application
+version: 1.0.0
+appVersion: 3.9.0
+

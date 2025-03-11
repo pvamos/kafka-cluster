@@ -1,0 +1,52 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: {{ .Values.kafka.clusterName }}
+  namespace: kafka
+spec:
+  kafka:
+    replicas: {{ .Values.kafka.replicas }}
+    version: {{ .Values.kafka.version }}
+    storage:
+      type: persistent-claim
+      size: {{ .Values.kafka.storage.size }}
+      class: {{ .Values.kafka.storage.class }}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    template:
+      pod:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/kafka
+                    operator: In
+                    values:
+                    - "true"
+        tolerations:
+          - key: node-role.kubernetes.io/kafka
+            operator: Exists
+            effect: NoSchedule
+  zookeeper:
+    replicas: {{ .Values.zookeeper.replicas }}
+    storage:
+      type: persistent-claim
+      size: {{ .Values.zookeeper.storage.size }}
+      class: {{ .Values.zookeeper.storage.class }}
+      deleteClaim: false  # Prevent PVC deletion when pods are deleted
+    template:
+      pod:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/worker
+                    operator: In
+                    values:
+                    - "true"
+

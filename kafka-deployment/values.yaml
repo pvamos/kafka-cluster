@@ -1,0 +1,41 @@
+# Kafka cluster on kafka nodes
+kafka:
+  clusterName: kafka-cluster
+  version: 3.9.0
+  replicas: 4
+  storage:
+    size: 25Gi
+    class: kafka-local
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-role.kubernetes.io/kafka
+          operator: In
+          values:
+          - "true"
+  tolerations:
+    - key: node-role.kubernetes.io/kafka
+      operator: Exists
+      effect: NoSchedule
+
+# Zookeeper on worker nodes
+zookeeper:
+  replicas: 3
+  storage:
+    size: 5Gi
+    class: longhorn
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-role.kubernetes.io/worker
+          operator: In
+          values:
+          - "true"
+
+# Strimzi operator on worker nodes
+operator:
+  nodeSelector:
+    node-role.kubernetes.io/worker: "true"
+
