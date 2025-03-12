@@ -12,41 +12,30 @@ spec:
       size: {{ .Values.kafka.storage.size }}
       class: {{ .Values.kafka.storage.class }}
     listeners:
-      - name: plain
-        port: 9092
-        type: internal
-        tls: false
+      {{- toYaml .Values.kafka.listeners | nindent 6 }}
     template:
       pod:
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                  - key: node-role.kubernetes.io/kafka
-                    operator: In
-                    values:
-                    - "true"
+        nodeSelector:
+          {{- toYaml .Values.kafka.nodeSelector | nindent 10 }}
         tolerations:
-          - key: node-role.kubernetes.io/kafka
-            operator: Exists
-            effect: NoSchedule
+          {{- toYaml .Values.kafka.tolerations | nindent 10 }}
+        affinity:
+          {{- toYaml .Values.kafka.affinity | nindent 10 }}
+
   zookeeper:
     replicas: {{ .Values.zookeeper.replicas }}
     storage:
       type: persistent-claim
       size: {{ .Values.zookeeper.storage.size }}
       class: {{ .Values.zookeeper.storage.class }}
-      deleteClaim: false  # Prevent PVC deletion when pods are deleted
     template:
       pod:
+        nodeSelector:
+          {{- toYaml .Values.zookeeper.nodeSelector | nindent 10 }}
         affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                  - key: node-role.kubernetes.io/worker
-                    operator: In
-                    values:
-                    - "true"
+          {{- toYaml .Values.zookeeper.affinity | nindent 10 }}
+
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
 

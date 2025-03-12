@@ -6,36 +6,83 @@ kafka:
   storage:
     size: 25Gi
     class: kafka-local
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: node-role.kubernetes.io/kafka
-          operator: In
-          values:
-          - "true"
+  listeners:
+    - name: plain
+      port: 9092
+      type: internal
+      tls: false
+      authentication:
+        type: scram-sha-512
+  nodeSelector:
+    node-role.kubernetes.io/kafka: "true"
   tolerations:
     - key: node-role.kubernetes.io/kafka
       operator: Exists
       effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/kafka
+                operator: In
+                values:
+                  - "true"
 
 # Zookeeper on worker nodes
 zookeeper:
   replicas: 3
   storage:
-    size: 5Gi
-    class: longhorn
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: node-role.kubernetes.io/worker
-          operator: In
-          values:
-          - "true"
+    size: 3Gi
+    class: zookeeper-longhorn
+    replicationFactor: 3
+  nodeSelector:
+    node-role.kubernetes.io/worker: "true"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/worker
+                operator: In
+                values:
+                  - "true"
 
 # Strimzi operator on worker nodes
 operator:
   nodeSelector:
     node-role.kubernetes.io/worker: "true"
+
+# Kafka users
+users:
+  - name: admin
+    type: scram-sha-512
+    roles: admin
+  - name: producer
+    type: scram-sha-512
+    roles: producer
+  - name: consumer
+    type: scram-sha-512
+    roles: consumer
+
+# Kafka topics auto-creation
+topics:
+  - name: example-topic
+    partitions: 3
+    replicas: 3
+    config:
+      retention.ms: 604800000  # Retain messages for 7 days
+      segment.bytes: 1073741824
+  - name: logs
+    partitions: 5
+    replicas: 3
+    config:
+      retention.ms: 1209600000  # Retain messages for 14 days
+      cleanup.policy: "delete"
+  - name: metrics
+    partitions: 2
+    replicas: 2
+    config:
+      retention.ms: 259200000  # Retain messages for 3 days
+      segment.bytes: 524288000  # 500MB segments
 

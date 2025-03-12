@@ -4,7 +4,7 @@ set -e  # Exit on error
 
 NAMESPACE="kafka"
 
-echo "🚀 Creating Kubernetes namespace for Kafka..."
+echo "📦 Creating Kubernetes namespace for Kafka..."
 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
 echo "🔧 Deploying Kafka Local Storage (PVs & StorageClass)..."
@@ -13,7 +13,7 @@ helm upgrade --install kafka-local-storage ./kafka-local-storage -n $NAMESPACE
 echo "🔄 Waiting for PersistentVolumes to be created..."
 kubectl wait --for=jsonpath='{.items[*].status.phase}'=Available pv --timeout=60s || true
 
-echo "📦 Installing Strimzi Kafka Operator..."
+echo "🚀 Installing Strimzi Kafka Operator..."
 helm repo add strimzi https://strimzi.io/charts/
 helm repo update
 helm upgrade --install strimzi-operator strimzi/strimzi-kafka-operator -n $NAMESPACE

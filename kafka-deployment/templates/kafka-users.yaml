@@ -1,0 +1,51 @@
+{{- range .Values.users }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: {{ .name }}
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      {{- if eq .roles "admin" }}
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operation: All
+      - resource:
+          type: group
+          name: "*"
+          patternType: literal
+        operation: All
+      - resource:
+          type: cluster
+          name: kafka-cluster
+          patternType: literal
+        operation: All
+      {{- else if eq .roles "producer" }}
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operation: Write
+      {{- else if eq .roles "consumer" }}
+      - resource:
+          type: topic
+          name: "*"
+          patternType: literal
+        operation: Read
+      - resource:
+          type: group
+          name: "*"
+          patternType: literal
+        operation: Read
+      {{- end }}
+---
+{{- end }}
+

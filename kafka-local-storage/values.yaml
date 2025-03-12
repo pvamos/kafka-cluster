@@ -1,9 +1,10 @@
 # StorageClass configuration for Kafka local storage
 storageClass:
   name: kafka-local
+  volumeBindingMode: WaitForFirstConsumer
 
 # PVC size per Kafka broker: 25Gi
-# to avoid any filesystem overhead issues on the larger /dev/sda2 ext4 volumes
+# to avoid any filesystem overhead issues on the larger /dev/sda2 xfs volumes
 persistentVolumeSize: 25Gi
 
 # PersistentVolumes definitions for each Kafka node
