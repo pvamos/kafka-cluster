@@ -2,7 +2,7 @@
 
 This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi** and **Helm**.
 
-## ☺ Author
+## 👨🏻‍🔬 Author
 
 **Péter Vámos**  
 - https://linkedin.com/in/pvamos
@@ -55,7 +55,7 @@ kafka-cluster-zookeeper-1     1/1     Running   workerY
 kafka-cluster-zookeeper-2     1/1     Running   workerZ
 ```
 
-## 🗁 Project Directory Structure
+## 📁 Project Directory Structure
 ```
 kafka-cluster/
 │
