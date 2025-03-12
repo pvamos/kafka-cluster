@@ -10,7 +10,7 @@ kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f 
 echo "🔧 Deploying Kafka Local Storage (PVs & StorageClass)..."
 helm upgrade --install kafka-local-storage ./kafka-local-storage -n $NAMESPACE
 
-echo "🔄 Waiting for PersistentVolumes to be created..."
+echo "⏳ Waiting for PersistentVolumes to be created..."
 kubectl wait --for=jsonpath='{.items[*].status.phase}'=Available pv --timeout=60s || true
 
 echo "🚀 Installing Strimzi Kafka Operator..."
@@ -26,4 +26,3 @@ helm upgrade --install kafka-cluster ./kafka-deployment -n $NAMESPACE
 
 echo "✅ Deployment completed!"
 echo "📌 Check the Kafka pods using: kubectl get pods -n $NAMESPACE"
-
