@@ -57,7 +57,7 @@ kafkaNodePools:
         memory: 256Mi
         cpu: "100m"
       limits:
-        memory: 768Mi
+        memory: 512Mi
         cpu: "600m"
     nodeSelector:
       node-role.kubernetes.io/worker: "true"
