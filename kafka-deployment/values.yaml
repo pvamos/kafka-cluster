@@ -1,8 +1,10 @@
-# Kafka cluster on kafka nodes
+# Namespace to deploy to
+namespace: kafka
+
+# Kafka cluster
 kafka:
   clusterName: kafka-cluster
   version: 3.9.0
-  replicas: 4
   storage:
     size: 25Gi
     class: kafka-local
@@ -13,45 +15,61 @@ kafka:
       tls: false
       authentication:
         type: scram-sha-512
-  nodeSelector:
-    node-role.kubernetes.io/kafka: "true"
-  tolerations:
-    - key: node-role.kubernetes.io/kafka
-      operator: Exists
-      effect: NoSchedule
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: node-role.kubernetes.io/kafka
-                operator: In
-                values:
-                  - "true"
+  logging:
+    type: inline
+    loggers:
+      log4j.logger.kafka: "INFO"
+      log4j.logger.io.strimzi: "INFO"
+      log4j.logger.org.apache.kafka: "INFO"
 
-# Zookeeper on worker nodes
-zookeeper:
-  replicas: 3
-  storage:
-    size: 3Gi
-    class: zookeeper-longhorn
-    replicationFactor: 3
-  nodeSelector:
-    node-role.kubernetes.io/worker: "true"
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: node-role.kubernetes.io/worker
-                operator: In
-                values:
-                  - "true"
+# KafkaNodePools for Brokers and Controllers
+kafkaNodePools:
+  - name: kafka-brokers
+    replicas: 4
+    roles:
+      - broker
+    storage:
+      size: 25Gi
+      class: kafka-local
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: "1000m"
+      limits:
+        memory: 1200Mi
+        cpu: "1800m"
+    nodeSelector:
+      node-role.kubernetes.io/kafka: "true"
+    tolerations:
+      - key: node-role.kubernetes.io/kafka
+        operator: Exists
+        effect: NoSchedule
 
-# Strimzi operator on worker nodes
-operator:
-  nodeSelector:
-    node-role.kubernetes.io/worker: "true"
+  - name: kafka-controllers
+    replicas: 3
+    roles:
+      - controller
+    storage:
+      size: 3Gi
+      class: kafka-longhorn
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: "500m"
+      limits:
+        memory: 1000Mi
+        cpu: "1000m"
+    nodeSelector:
+      node-role.kubernetes.io/worker: "true"
+    tolerations: []
+
+# Kafka Controller Storage (Longhorn)
+kafkaControllerStorage:
+  class: kafka-longhorn
+  size: 3Gi
+  replicationFactor: 2
+  staleReplicaTimeout: "30"
+  fromBackup: ""
 
 # Kafka users
 users:

@@ -1,10 +1,10 @@
-# Kafka Cluster Deployment with Helm & Strimzi
+# Kafka cluster deployment with Helm & Strimzi
 
 This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi** and **Helm**.
 
 ## 👨🏻‍🔬 Author
 
-**Péter Vámos**  
+**Péter Vámos**
 - https://linkedin.com/in/pvamos
 - pvamos@gmail.com
 
@@ -13,32 +13,31 @@ This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi** and
 This setup includes:
 - ✅ **Strimzi Kafka Operator** for managing Kafka
 - ✅ **4-node Kafka cluster** (Kafka brokers run only on dedicated nodes)
-- ✅ **3-node Zookeeper cluster** (runs only on worker nodes)
 - ✅ **Local PersistentVolumes (PVs) for Kafka storage**
 - ✅ **Automated Helm deployment script (`install.sh`)**
 
 ## 📜 Summary
 - ✅ Kafka brokers run only on Kafka nodes (`node-role.kubernetes.io/kafka=true`)
-- ✅ Kafka storage uses local persistent volumes (28Gi from `/var/lib/kafka`)
-- ✅ Zookeeper runs only on worker nodes (`node-role.kubernetes.io/worker=true`)
+- ✅ Kafka storage uses local persistent volumes (25Gi from `/var/lib/kafka`)
 - ✅ Strimzi Operator manages Kafka automatically
 - ✅ Strimzi uses `template.pod` for scheduling rules, not `nodeAffinity` directly inside `spec.kafka`.
+- ✅ Kafka runs in **KRaft mode** (no Zookeeper required).
 
-## 🚀 Deployment Steps
+## 🚀 Deployment steps
 
-### 1️⃣ Clone the Repository
+### 1️⃣  Clone the repository
 ```sh
 git clone <repository-url>
 cd kafka-cluster
 chmod +x install.sh
 ```
 
-### 2️⃣ Run the Installation Script
+### 2️⃣  Run the installation script
 ```sh
 ./install.sh
 ```
 
-### 3️⃣ Verify the Deployment
+### 3️⃣  Verify the deployment
 ```sh
 kubectl get pods -n kafka -o wide
 ```
@@ -50,12 +49,9 @@ kafka-cluster-kafka-0         1/1     Running   kafka1
 kafka-cluster-kafka-1         1/1     Running   kafka2
 kafka-cluster-kafka-2         1/1     Running   kafka3
 kafka-cluster-kafka-3         1/1     Running   kafka4
-kafka-cluster-zookeeper-0     1/1     Running   workerX
-kafka-cluster-zookeeper-1     1/1     Running   workerY
-kafka-cluster-zookeeper-2     1/1     Running   workerZ
 ```
 
-## 📁 Project Directory Structure
+## 📁 Project directory structure
 ```
 kafka-cluster/
 │
@@ -68,13 +64,12 @@ kafka-cluster/
 │
 ├── kafka-deployment/             # Helm chart for Kafka deployment with Strimzi
 │   ├── templates/                # Templates for Kubernetes resources
-│   │   ├── kafka-cluster.yaml    # Defines Kafka and Zookeeper cluster
+│   │   ├── kafka-cluster.yaml    # Defines the Kafka cluster (KRaft mode)
 │   │   ├── kafka-pvc.yaml        # Defines Kafka PersistentVolumeClaims (PVCs)
 │   │   ├── kafka-topics.yaml     # Defines Kafka topics
 │   │   ├── kafka-users.yaml      # Defines Kafka user authentication and ACLs
-│   │   ├── storageclass-zookeeper.yaml # Defines the StorageClass for Zookeeper
 │   ├── Chart.yaml                # Helm chart metadata
-│   └── values.yaml               # Configurable values for Kafka/Zookeeper
+│   └── values.yaml               # Configurable values for Kafka
 │
 ├── install.sh                    # Shell script to automate Helm chart installation
 ├── LICENSE                       # MIT License
@@ -84,19 +79,18 @@ kafka-cluster/
 ## ⎈ Helm chart components
 
 ### 🖴 Kafka local storage
-The `kafka-local-storage` chart defines the local PersistentVolumes (PVs) and StorageClass for Kafka. 
+The `kafka-local-storage` chart defines the local PersistentVolumes (PVs) and StorageClass for Kafka.
 
 - `storageclass.yaml`: Defines a local storage class (`kafka-local`)
 - `pv.yaml`: Defines PersistentVolumes for Kafka storage
 
 ### 💡Kafka deployment
-The `kafka-deployment` chart deploys Kafka and Zookeeper using Strimzi.
+The `kafka-deployment` chart deploys Kafka using Strimzi **in KRaft mode (no Zookeeper)**.
 
-- `kafka-cluster.yaml`: Defines the Kafka cluster and Zookeeper settings
+- `kafka-cluster.yaml`: Defines the Kafka cluster
 - `kafka-pvc.yaml`: Configures the PersistentVolumeClaims (PVCs) for Kafka
 - `kafka-topics.yaml`: Pre-defines Kafka topics with retention policies
 - `kafka-users.yaml`: Configures Kafka authentication and user ACLs
-- `storageclass-zookeeper.yaml`: Defines the StorageClass for Zookeeper
 
 ## 📌 Troubleshooting
 
@@ -146,17 +140,15 @@ Once inside the pod:
 kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
-
 ## ⚖ License
 
-MIT License  
+MIT License
 
-Copyright (c) 2025 **Péter Vámos**  
+Copyright (c) 2025 **Péter Vámos**
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 

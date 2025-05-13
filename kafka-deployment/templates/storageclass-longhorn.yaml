@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.kafkaControllerStorage.class }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "{{ .Values.kafkaControllerStorage.replicationFactor }}"
+  staleReplicaTimeout: "{{ .Values.kafkaControllerStorage.staleReplicaTimeout }}"
+  fromBackup: "{{ .Values.kafkaControllerStorage.fromBackup }}"
+

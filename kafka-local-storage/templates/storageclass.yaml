@@ -6,4 +6,3 @@ metadata:
     storageclass.kubernetes.io/is-default-class: "false"
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: {{ .Values.storageClass.volumeBindingMode }}
-

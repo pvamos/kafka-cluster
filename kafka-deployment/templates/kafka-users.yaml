@@ -3,7 +3,7 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaUser
 metadata:
   name: {{ .name }}
-  namespace: kafka
+  namespace: {{ $.Values.namespace }}
   labels:
     strimzi.io/cluster: kafka-cluster
 spec:

@@ -1,0 +1,4 @@
+# Strimzi operator on worker nodes
+operator:
+  nodeSelector:
+    node-role.kubernetes.io/worker: "true"

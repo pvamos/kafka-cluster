@@ -4,7 +4,7 @@ storageClass:
   volumeBindingMode: WaitForFirstConsumer
 
 # PVC size per Kafka broker: 25Gi
-# to avoid any filesystem overhead issues on the larger /dev/sda2 xfs volumes
+# To avoid filesystem overhead issues on large `/dev/sda2` XFS volumes
 persistentVolumeSize: 25Gi
 
 # PersistentVolumes definitions for each Kafka node
@@ -21,4 +21,3 @@ persistentVolumes:
   - name: kafka4-pv
     node: kafka4
     path: /var/lib/kafka
-
