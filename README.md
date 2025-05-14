@@ -1,31 +1,36 @@
 # Kafka cluster deployment with Helm & Strimzi
 
-This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi** and **Helm**.
+This project deploys a **Kafka cluster** on **Kubernetes** using **Strimzi**, **Helm**, and includes **Kafka UI** for topic/consumer group management.
 
-## 👨🏻‍🔬 Author
+## 👨‍🔬 Author
 
 **Péter Vámos**
-- https://linkedin.com/in/pvamos
-- pvamos@gmail.com
+
+* [https://linkedin.com/in/pvamos](https://linkedin.com/in/pvamos)
+* [pvamos@gmail.com](mailto:pvamos@gmail.com)
 
 ## 📜 Overview
 
 This setup includes:
-- ✅ **Strimzi Kafka Operator** for managing Kafka
-- ✅ **4-node Kafka cluster** (Kafka brokers run only on dedicated nodes)
-- ✅ **Local PersistentVolumes (PVs) for Kafka storage**
-- ✅ **Automated Helm deployment script (`install.sh`)**
+
+* ✅ **Strimzi Kafka Operator** for managing Kafka
+* ✅ **4-node Kafka cluster** (Kafka brokers run only on dedicated nodes)
+* ✅ **Local PersistentVolumes (PVs) for Kafka storage**
+* ✅ **Kafka UI** with SCRAM authentication and optional login screen
+* ✅ **Automated Helm deployment script (`install.sh`)**
 
 ## 📜 Summary
-- ✅ Kafka brokers run only on Kafka nodes (`node-role.kubernetes.io/kafka=true`)
-- ✅ Kafka storage uses local persistent volumes (25Gi from `/var/lib/kafka`)
-- ✅ Strimzi Operator manages Kafka automatically
-- ✅ Strimzi uses `template.pod` for scheduling rules, not `nodeAffinity` directly inside `spec.kafka`.
-- ✅ Kafka runs in **KRaft mode** (no Zookeeper required).
+
+* ✅ Kafka brokers run only on Kafka nodes (`node-role.kubernetes.io/kafka=true`)
+* ✅ Kafka storage uses local PVs (45Gi from `/var/lib/kafka`)
+* ✅ Kafka controllers run on control-plane nodes using Longhorn
+* ✅ Kafka runs in **KRaft mode** (no Zookeeper)
+* ✅ Kafka UI is deployed with Strimzi-compatible SCRAM credentials
 
 ## 🚀 Deployment steps
 
 ### 1️⃣  Clone the repository
+
 ```sh
 git clone <repository-url>
 cd kafka-cluster
@@ -33,74 +38,92 @@ chmod +x install.sh
 ```
 
 ### 2️⃣  Run the installation script
+
 ```sh
 ./install.sh
 ```
 
 ### 3️⃣  Verify the deployment
+
 ```sh
-kubectl get pods -n kafka -o wide
+kubectl get pods -n kafka [ -o wide ]
 ```
 
 Expected output:
 ```
-NAME                          READY   STATUS    NODE
-kafka-cluster-kafka-0         1/1     Running   kafka1
-kafka-cluster-kafka-1         1/1     Running   kafka2
-kafka-cluster-kafka-2         1/1     Running   kafka3
-kafka-cluster-kafka-3         1/1     Running   kafka4
+NAME       STATUS   ROLES                       AGE     VERSION
+control1   Ready    control-plane,etcd,master   1h48m   v1.32.4+k3s1
+control2   Ready    control-plane,etcd,master   1h47m   v1.32.4+k3s1
+control3   Ready    control-plane,etcd,master   1h47m   v1.32.4+k3s1
+worker1    Ready    kafka,worker                1h47m   v1.32.4+k3s1
+worker2    Ready    kafka,worker                1h47m   v1.32.4+k3s1
+worker3    Ready    kafka,worker                1h47m   v1.32.4+k3s1
+worker4    Ready    kafka,worker                1h47m   v1.32.4+k3s1
 ```
 
 ## 📁 Project directory structure
+
 ```
 kafka-cluster/
-│
-├── kafka-local-storage/          # Helm chart for Kafka local storage (PVs & StorageClass)
-│   ├── templates/                # Templates for Kubernetes resources
-│   │   ├── storageclass.yaml     # Defines the StorageClass for Kafka
-│   │   └── pv.yaml               # Defines PersistentVolumes for Kafka nodes
-│   ├── Chart.yaml                # Helm chart metadata
-│   └── values.yaml               # Configurable values for storage (size, nodes, etc.)
-│
-├── kafka-deployment/             # Helm chart for Kafka deployment with Strimzi
-│   ├── templates/                # Templates for Kubernetes resources
-│   │   ├── kafka-cluster.yaml    # Defines the Kafka cluster (KRaft mode)
-│   │   ├── kafka-pvc.yaml        # Defines Kafka PersistentVolumeClaims (PVCs)
-│   │   ├── kafka-topics.yaml     # Defines Kafka topics
-│   │   ├── kafka-users.yaml      # Defines Kafka user authentication and ACLs
-│   ├── Chart.yaml                # Helm chart metadata
-│   └── values.yaml               # Configurable values for Kafka
-│
-├── install.sh                    # Shell script to automate Helm chart installation
-├── LICENSE                       # MIT License
-└── README.md                     # Documentation for deployment
+|
+├── kafka-local-storage/         # Helm chart for Kafka local storage
+│   ├── templates/
+│   │   ├── storageclass.yaml
+│   │   └── pv.yaml
+│   ├── Chart.yaml
+│   └── values.yaml
+|
+├── kafka-deployment/            # Helm chart for Kafka (Strimzi)
+│   ├── templates/
+│   │   ├── kafka-cluster.yaml
+│   │   ├── kafka-pvc.yaml
+│   │   ├── kafka-topics.yaml
+│   │   ├── kafka-users.yaml
+│   │   └── kafka-nodepools.yaml
+│   ├── Chart.yaml
+│   └── values.yaml
+|
+├── kafka-ui/                    # Helm chart for Kafka UI
+│   ├── templates/
+│   │   ├── kafka-user.yaml
+│   │   └── kafka-ui-deployment.yaml
+│   ├── Chart.yaml
+│   └── values.yaml
+|
+├── install.sh                   # Helm automation script
+├── LICENSE                      # MIT License
+└── README.md                    # This documentation
 ```
 
-## ⎈ Helm chart components
+## ⚘ Helm chart components
 
-### 🖴 Kafka local storage
-The `kafka-local-storage` chart defines the local PersistentVolumes (PVs) and StorageClass for Kafka.
+### Kafka local storage (`kafka-local-storage/`)
 
-- `storageclass.yaml`: Defines a local storage class (`kafka-local`)
-- `pv.yaml`: Defines PersistentVolumes for Kafka storage
+* `pv.yaml`: Defines local PersistentVolumes per node
+* `storageclass.yaml`: StorageClass for PV provisioning
 
-### 💡Kafka deployment
-The `kafka-deployment` chart deploys Kafka using Strimzi **in KRaft mode (no Zookeeper)**.
+### Kafka cluster (`kafka-deployment/`)
 
-- `kafka-cluster.yaml`: Defines the Kafka cluster
-- `kafka-pvc.yaml`: Configures the PersistentVolumeClaims (PVCs) for Kafka
-- `kafka-topics.yaml`: Pre-defines Kafka topics with retention policies
-- `kafka-users.yaml`: Configures Kafka authentication and user ACLs
+* `kafka-cluster.yaml`: Main Strimzi Kafka resource
+* `kafka-nodepools.yaml`: Broker and controller node pools
+* `kafka-users.yaml`: Defines SCRAM-authenticated users
+* `kafka-topics.yaml`: Defines auto-created topics
+
+### Kafka UI (`kafka-ui/`)
+
+* `kafka-user.yaml`: Creates the SCRAM user
+* `kafka-ui-deployment.yaml`: Deploys Kafka UI using `sasl.jaas.config` from secret
 
 ## 📌 Troubleshooting
 
-### 🔍 Check Logs
+### Check logs
 
 ```sh
 kubectl logs -n kafka -l app.kubernetes.io/name=kafka
 ```
 
-### ❌ Delete and reinstall Kafka
+### Delete and reinstall Kafka
+
 ```sh
 helm uninstall kafka-cluster -n kafka
 helm uninstall strimzi-operator -n kafka
@@ -111,34 +134,43 @@ kubectl delete namespace kafka
 ## ⌨ Useful commands
 
 ### Get Kafka brokers
+
 ```sh
 kubectl get pods -n kafka -l strimzi.io/kind=Kafka
 ```
 
 ### Get Kafka topics
+
 ```sh
 kubectl get kafkatopics -n kafka
 ```
 
 ### Describe Kafka topics
+
 ```sh
 kubectl describe kafkatopic <topic-name> -n kafka
 ```
 
 ### Get Kafka users
+
 ```sh
 kubectl get kafkausers -n kafka
 ```
 
 ### Access Kafka via CLI
+
 ```sh
 kubectl exec -it <kafka-broker-pod> -n kafka -- /bin/sh
-```
-
-Once inside the pod:
-```sh
 kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
+
+### Access Kafka UI
+
+```sh
+kubectl port-forward svc/kafka-ui -n kafka 8080:8080
+```
+
+Visit [http://localhost:8080](http://localhost:8080)
 
 ## ⚖ License
 
