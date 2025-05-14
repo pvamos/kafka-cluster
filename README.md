@@ -128,7 +128,7 @@ Kafka UI connects to the Kafka cluster using a dedicated SCRAM-SHA-512 authentic
 
 This ensures secure access to Kafka topics, consumer groups, and metadata via Strimzi.
 
-###2️⃣ UI Login Screen (Frontend)
+### 2️⃣ UI Login Screen (Frontend)
 
 Kafka UI also presents a login screen to protect the web interface from unauthorized access:
 - **Login username**: `admin`
