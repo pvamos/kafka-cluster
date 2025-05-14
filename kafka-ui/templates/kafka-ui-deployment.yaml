@@ -33,6 +33,7 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            # Kafka cluster configuration
             - name: KAFKA_CLUSTERS_0_NAME
               value: "strimzi"
             - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
@@ -46,11 +47,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.auth.username }}
                   key: sasl.jaas.config
+            # Optional login form (UI auth)
             {{- if .Values.auth.uiLogin.enabled }}
-            - name: KAFKA_UI_AUTH_TYPE
-              value: "LOGIN"
-            - name: KAFKA_UI_LOGIN_USERNAME
+            - name: AUTH_TYPE
+              value: "LOGIN_FORM"
+            - name: SPRING_SECURITY_USER_NAME
               value: "{{ .Values.auth.uiLogin.username }}"
-            - name: KAFKA_UI_LOGIN_PASSWORD
+            - name: SPRING_SECURITY_USER_PASSWORD
               value: "{{ .Values.auth.uiLogin.password }}"
             {{- end }}
