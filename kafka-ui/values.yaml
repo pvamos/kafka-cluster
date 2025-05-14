@@ -1,0 +1,13 @@
+namespace: kafka
+
+kafka:
+  clusterName: kafka-cluster
+
+auth:
+  username: kafka-ui-admin
+
+  # Optional: UI login prompt
+  uiLogin:
+    enabled: true
+    username: admin
+    password: changeme

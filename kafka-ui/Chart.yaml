@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kafka-ui
+description: A Helm chart to deploy Kafka UI with SCRAM authentication for Strimzi Kafka clusters
+type: application
+version: 1.0.0
+appVersion: latest
