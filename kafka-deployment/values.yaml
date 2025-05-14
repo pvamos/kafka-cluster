@@ -1,6 +1,9 @@
 # Namespace to deploy to
 namespace: kafka
 
+# PVC name
+pvcname: kafka-pvc
+
 # Kafka cluster
 kafka:
   clusterName: kafka-cluster
@@ -36,7 +39,7 @@ kafkaNodePools:
         memory: 512Mi
         cpu: "200m"
       limits:
-        memory: 3584Mi
+        memory: 2048Mi
         cpu: "1500m"
     nodeSelector:
       node-role.kubernetes.io/kafka: "true"

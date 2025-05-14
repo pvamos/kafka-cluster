@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: kafka-ui
+  name: {{ .Values.kafka.uiName }}
   namespace: {{ .Values.namespace }}
 spec:
   selector:
-    app: kafka-ui
+    app: {{ .Values.kafka.uiName }}
   ports:
     - port: 8080
       targetPort: 8080
@@ -13,22 +13,22 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kafka-ui
+  name: {{ .Values.kafka.uiName }}
   namespace: {{ .Values.namespace }}
   labels:
-    app: kafka-ui
+    app: {{ .Values.kafka.uiName }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: kafka-ui
+      app: {{ .Values.kafka.uiName }}
   template:
     metadata:
       labels:
-        app: kafka-ui
+        app: {{ .Values.kafka.uiName }}
     spec:
       containers:
-        - name: kafka-ui
+        - name: {{ .Values.kafka.uiName }}
           image: provectuslabs/kafka-ui:latest
           ports:
             - containerPort: 8080

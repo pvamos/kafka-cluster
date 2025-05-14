@@ -2,6 +2,7 @@ namespace: kafka
 
 kafka:
   clusterName: kafka-cluster
+  uiName: kafka-ui
 
 auth:
   username: kafka-ui-admin
