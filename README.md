@@ -143,9 +143,11 @@ auth:
     username: admin
     password: changeme
 ```
+
+#### 🔄 Reset or Rotate Credentials
+
 To change the login screen credentials, update the values above and re-deploy Kafka UI.
 
-🔄 Reset or Rotate Credentials
 - To rotate the Kafka SCRAM password:
   1. Delete and recreate the KafkaUser resource.
   2. Restart the kafka-ui pod to reload the new secret.
