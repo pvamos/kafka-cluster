@@ -95,7 +95,7 @@ kafka-cluster/
 └── README.md                    # This documentation
 ```
 
-## ⚘ Helm chart components
+## ⚓ Helm chart components
 
 ### Kafka local storage (`kafka-local-storage/`)
 
@@ -114,7 +114,7 @@ kafka-cluster/
 * `kafka-user.yaml`: Creates the SCRAM user
 * `kafka-ui-deployment.yaml`: Deploys Kafka UI using `sasl.jaas.config` from secret
 
-## 📌 Troubleshooting
+## 🔬 Troubleshooting
 
 ### Check logs
 
