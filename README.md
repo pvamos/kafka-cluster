@@ -51,14 +51,17 @@ kubectl get pods -n kafka [ -o wide ]
 
 Expected output:
 ```
-NAME       STATUS   ROLES                       AGE     VERSION
-control1   Ready    control-plane,etcd,master   1h48m   v1.32.4+k3s1
-control2   Ready    control-plane,etcd,master   1h47m   v1.32.4+k3s1
-control3   Ready    control-plane,etcd,master   1h47m   v1.32.4+k3s1
-worker1    Ready    kafka,worker                1h47m   v1.32.4+k3s1
-worker2    Ready    kafka,worker                1h47m   v1.32.4+k3s1
-worker3    Ready    kafka,worker                1h47m   v1.32.4+k3s1
-worker4    Ready    kafka,worker                1h47m   v1.32.4+k3s1
+NAME                                             READY   STATUS    RESTARTS       AGE
+kafka-cluster-entity-operator-59ffc7486c-kn8s9   2/2     Running   0              1h38m
+kafka-cluster-kafka-brokers-0                    1/1     Running   0              1h40m
+kafka-cluster-kafka-brokers-1                    1/1     Running   0              1h40m
+kafka-cluster-kafka-brokers-2                    1/1     Running   0              1h40m
+kafka-cluster-kafka-brokers-3                    1/1     Running   0              1h40m
+kafka-cluster-kafka-controllers-4                1/1     Running   0              1h40m
+kafka-cluster-kafka-controllers-5                1/1     Running   0              1h40m
+kafka-cluster-kafka-controllers-6                1/1     Running   0              1h40m
+kafka-ui-55c9c85958-d75xf                        1/1     Running   0              1h40m
+strimzi-cluster-operator-6f4fc4667c-fdwr2        1/1     Running   0              1h40m
 ```
 
 ## 📁 Project directory structure
