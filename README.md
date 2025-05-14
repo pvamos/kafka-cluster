@@ -144,16 +144,16 @@ auth:
     password: changeme
 ```
 
-#### 🔄 Reset or Rotate Credentials
+### 🔄 Reset or Rotate Credentials
 
-To change the login screen credentials, update the values above and re-deploy Kafka UI.
+- To change the login screen credentials, update the values above and re-deploy **Kafka UI**:
+  1. Modify the *Helm values file*.
+  2. Re-run the `helm upgrade` command or `./install.sh`.
 
-- To rotate the Kafka SCRAM password:
+
+- To rotate the **Kafka SCRAM password**:
   1. Delete and recreate the `KafkaUser` resource.
   2. Restart the `kafka-ui` pod to reload the new secret.
-- To change the login screen password:
-  1. Modify the Helm values file.
-  2. Re-run the `helm upgrade` command or `./install.sh`.
 
 ## 🔬 Troubleshooting
 
