@@ -1,0 +1,6 @@
+apiVersion: v2
+name: clickhouse-backup
+description: ClickHouse scheduled backups (daily full + hourly incremental) to S3 + retention cleanup
+type: application
+version: 1.0.0
+appVersion: "25.11"

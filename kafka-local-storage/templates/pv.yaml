@@ -1,0 +1,51 @@
+{{- range .Values.brokerPersistentVolumes }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .name }}
+spec:
+  capacity:
+    storage: {{ $.Values.brokerPVCsize }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: {{ $.Values.persistentVolumeReclaimPolicy }}
+  storageClassName: {{ $.Values.storageClass.name }}
+  local:
+    path: {{ .path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{ .node }}
+---
+{{- end }}
+
+{{- range .Values.controllerPersistentVolumes }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .name }}
+spec:
+  capacity:
+    storage: {{ $.Values.controllerPVCsize }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: {{ $.Values.persistentVolumeReclaimPolicy }}
+  storageClassName: {{ $.Values.storageClass.name }}
+  local:
+    path: {{ .path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{ .node }}
+---
+{{- end }}

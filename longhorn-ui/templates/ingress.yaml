@@ -1,0 +1,43 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    {{- range $key, $val := .Values.ingress.annotations }}
+    {{ $key }}: {{ $val | quote }}
+    {{- end }}
+    {{- /* Build Traefik middleware chain from values */ -}}
+    {{- $ns := .Values.namespace -}}
+    {{- $mws := list -}}
+    {{- if .Values.basicAuth.enabled -}}
+      {{- $mws = append $mws (printf "%s-%s@kubernetescrd" $ns "longhorn-ui-basicauth") -}}
+    {{- end -}}
+    {{- if .Values.ipAllowList.enabled -}}
+      {{- $mws = append $mws (printf "%s-%s@kubernetescrd" $ns "longhorn-ui-ipallow") -}}
+    {{- end -}}
+    {{- if .Values.extraMiddlewares }}
+      {{- $mws = concat $mws .Values.extraMiddlewares -}}
+    {{- end }}
+    {{- if gt (len $mws) 0 }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ join "," $mws }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "traefik" }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $.Values.service.name }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

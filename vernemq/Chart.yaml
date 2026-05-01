@@ -1,0 +1,23 @@
+# vernemq/Chart.yaml
+apiVersion: v2
+name: vernemq
+description: VerneMQ broker with env-driven MQTT→MQTT enrich plugin, dual listeners (PROXY v2 + internal), and optional RWX auth file.
+type: application
+version: 0.3.0              # Chart version (bump on chart changes)
+appVersion: "2.1.1"         # VerneMQ runtime (from base image)
+keywords:
+  - vernemq
+  - mqtt
+  - proxy-protocol
+  - enrich
+  - plugin
+home: https://vernemq.com/
+sources:
+  - https://github.com/vernemq/vernemq
+annotations:
+  artifacthub.io/changes: |
+    - feat: switch chart defaults to vernemq-enrich-msg MQTT->MQTT image (no Kafka client in broker)
+    - feat: simplify enrich values (accept, topicMap, defaultTarget, qos, retain)
+    - chore: remove unused Kafka-related values/envs
+maintainers:
+  - name: Platform

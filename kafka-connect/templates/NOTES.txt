@@ -1,0 +1,23 @@
+Kafka Connect cluster '{{ .Values.connect.name }}' has been deployed in namespace '{{ .Values.namespace }}'.
+
+To view the KafkaConnect resource:
+  kubectl get kafkaconnect.kafka.strimzi.io {{ .Values.connect.name }} -n {{ .Values.namespace }}
+
+To view Kafka Connect worker pods:
+  kubectl get pods -n {{ .Values.namespace }} -l strimzi.io/kind=KafkaConnect,strimzi.io/name={{ .Values.connect.name }}
+
+MQTT source connectors rendered by this chart:
+{{- if .Values.mqttSources }}
+{{- range .Values.mqttSources }}
+{{- if .enabled }}
+  - {{ .name }}
+{{- end }}
+{{- end }}
+{{- else if .Values.mqttSource.enabled }}
+  - {{ .Values.mqttSource.name }}
+{{- else }}
+  (none)
+{{- end }}
+
+To view connectors:
+  kubectl get kafkaconnectors.kafka.strimzi.io -n {{ .Values.namespace }} -l strimzi.io/cluster={{ .Values.connect.name }}

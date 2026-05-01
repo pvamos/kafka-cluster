@@ -1,0 +1,42 @@
+# Namespace where k3s' bundled Traefik runs
+namespace: kube-system
+
+ingress:
+  enabled: true
+  entryPoints:
+    - web              # Traefik serves HTTP only; TLS terminates at HAProxy
+  host: traefik.example.com
+  extraPathPrefixes: [] # e.g. ["/debug"]
+
+basicAuth:
+  enabled: true
+  # If you don't want to commit the secret into Git, set create: false
+  # and create the secret manually:
+  #   htpasswd -nbB admin 'REPLACE_ME' > auth
+  #   kubectl -n kube-system create secret generic traefik-dashboard-auth --from-file=users=auth
+  create: true
+  secretName: traefik-dashboard-auth
+  # Provide bcrypt htpasswd lines (one per user). Example output of:
+  #   htpasswd -nbB admin 'REPLACE_ME'
+  users:
+    - "admin:$2y$05$C8ZR6D018h1KLQ75SwUQZO7DhEAl5bfeK9pour4SyrrkMZAcZB4BK"
+
+# --- Allow only the HAProxy VM(s) to reach the UI (L7 allowlist) ---
+ipAllowList:
+  enabled: false
+  sourceRange:
+    - 194.164.62.184/32   # adjust to your HAProxy egress IPs
+  ipStrategy:
+    useXForwardedFor: true
+
+# Redirect "/" -> "/dashboard/"
+dashboardRootRedirect: true
+
+# Redirect "/dashboard" (no trailing slash) -> "/dashboard/"
+dashboardAppendSlashRedirect: true
+
+# Extra middlewares to chain after ours, e.g. ["other-ns-someMW@kubernetescrd"]
+extraMiddlewares: []
+
+nameOverride: ""
+fullnameOverride: ""

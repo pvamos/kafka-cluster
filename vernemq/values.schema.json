@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "vernemq chart values schema",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "namespace": {
+      "type": "string",
+      "description": "Namespace override (optional)."
+    },
+
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3
+    },
+
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "default": "IfNotPresent"
+        },
+        "pullSecrets": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      },
+      "required": ["repository", "tag"]
+    },
+
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean", "default": true },
+        "name": { "type": "string", "default": "vernemq" }
+      }
+    },
+
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": { "type": "boolean", "default": true }
+      }
+    },
+
+    "listeners": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "externalProxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 31883 },
+            "proxyProtocol": { "type": "boolean", "default": true }
+          },
+          "required": ["port"]
+        },
+        "internalPlain": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 1883 }
+          }
+        }
+      },
+      "required": ["externalProxy", "internalPlain"]
+    },
+
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "liveness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initialDelaySeconds": { "type": "integer", "minimum": 0, "default": 15 },
+            "periodSeconds": { "type": "integer", "minimum": 1, "default": 10 },
+            "timeoutSeconds": { "type": "integer", "minimum": 1, "default": 1 },
+            "failureThreshold": { "type": "integer", "minimum": 1, "default": 3 }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initialDelaySeconds": { "type": "integer", "minimum": 0, "default": 5 },
+            "periodSeconds": { "type": "integer", "minimum": 1, "default": 5 },
+            "timeoutSeconds": { "type": "integer", "minimum": 1, "default": 1 },
+            "failureThreshold": { "type": "integer", "minimum": 1, "default": 3 }
+          }
+        }
+      }
+    },
+
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kubernetes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "labelSelector": { "type": "string", "default": "app.kubernetes.io/name=vernemq" },
+            "namespaceOverride": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "headless": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "name": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 1883 },
+            "publishNotReadyAddresses": { "type": "boolean" },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "internal": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "name": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 1883 },
+            "type": {
+              "type": "string",
+              "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+              "default": "ClusterIP"
+            },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "external": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "name": { "type": "string" },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 31883
+            },
+            "nodePort": {
+              "type": "integer",
+              "minimum": 30000,
+              "maximum": 32767,
+              "default": 31883
+            },
+            "type": {
+              "type": "string",
+              "enum": ["NodePort"],
+              "default": "NodePort"
+            },
+            "externalTrafficPolicy": {
+              "type": "string",
+              "enum": ["Cluster", "Local"],
+              "default": "Local"
+            },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "authFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "mountPath": { "type": "string", "default": "/etc/vernemq/auth" },
+        "passwordFile": { "type": "string", "default": "vmq.passwd" },
+        "aclFile": { "type": "string", "default": "vmq.acl" },
+        "reloadNonce": {
+          "type": "string",
+          "description": "Change to force pod restart & reload auth file."
+        },
+        "pvc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "existingClaim": { "type": "string" },
+            "size": { "type": "string", "default": "256Mi" },
+            "storageClassName": { "type": "string" },
+            "accessModes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["ReadWriteMany", "ReadWriteOnce", "ReadOnlyMany"]
+              },
+              "default": ["ReadWriteMany"]
+            }
+          }
+        },
+        "users": {
+          "type": "array",
+          "description": "Users for vmq.passwd. Provide either passwordHash, password, or passwordFromSecret.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "username": { "type": "string" },
+              "passwordHash": {
+                "type": "string",
+                "description": "Pre-hashed password (vmq-passwd format)."
+              },
+              "password": {
+                "type": "string",
+                "description": "Plaintext password (will be hashed by bootstrap job)."
+              },
+              "passwordFromSecret": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "key": { "type": "string", "default": "password" }
+                },
+                "required": ["name"]
+              }
+            },
+            "required": ["username"],
+            "oneOf": [
+              { "required": ["passwordHash"] },
+              { "required": ["password"] },
+              { "required": ["passwordFromSecret"] }
+            ]
+          },
+          "default": []
+        },
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "image": { "type": "string", "default": "" },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"],
+              "default": "IfNotPresent"
+            },
+            "backoffLimit": { "type": "integer", "minimum": 0, "default": 3 },
+            "users": {
+              "type": "array",
+              "description": "If provided and authFile.users is empty, these are used to initialize vmq.passwd.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "username": { "type": "string" },
+                  "passwordHash": { "type": "string" },
+                  "password": { "type": "string" },
+                  "passwordFromSecret": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": { "type": "string" },
+                      "key": { "type": "string", "default": "password" }
+                    },
+                    "required": ["name"]
+                  }
+                },
+                "required": ["username"],
+                "oneOf": [
+                  { "required": ["passwordHash"] },
+                  { "required": ["password"] },
+                  { "required": ["passwordFromSecret"] }
+                ]
+              },
+              "default": []
+            }
+          }
+        },
+		"aclContent": {
+		  "type": "string",
+		  "default": "",
+		  "description": "Full contents of vmq.acl written by the bootstrap Job. If empty, chart writes a default."
+		}
+      }
+    },
+
+    "enrich": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "MQTT→MQTT enrich/republish settings for the vmq_enrich plugin (protobuf-only: envsensor.Reading -> envsensor.vernemq.EnrichedReading).",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+
+        "accept": {
+          "type": "string",
+          "default": "sensors-protobuf/#",
+          "description": "Comma-separated allowlist of inbound topics to process. Empty = accept all."
+        },
+
+        "topicMap": {
+          "type": "array",
+          "description": "Topic mapping rules. First match wins. `in` supports + and #. `out` can use {1}, {2}, … and {topic}.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "in": { "type": "string" },
+              "out": { "type": "string" }
+            },
+            "required": ["in", "out"]
+          },
+          "default": [
+            { "in": "sensors-protobuf/+", "out": "enriched/sensors-protobuf/{1}" }
+          ]
+        },
+
+        "defaultTarget": {
+          "type": "string",
+          "default": "",
+          "description": "Optional fallback output topic template if accepted but no topicMap rule matches. Supports {topic}. Empty/unset means drop."
+        },
+
+        "qos": {
+          "type": "integer",
+          "enum": [0, 1, 2],
+          "default": 1,
+          "description": "QoS for the republished enriched message."
+        },
+
+        "maxOutputSize": {
+          "type": ["string", "integer"],
+          "default": "1048576",
+          "description": "Drop messages whose final enriched output exceeds this many bytes (protobuf bytes)."
+        },
+
+        "includeTopic": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include original topic field in the output (optional metadata)."
+        },
+
+        "includeUser": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include MQTT username field in the output (optional metadata)."
+        },
+
+        "includeClientId": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include clientid field in the output (optional metadata)."
+        },
+
+        "includeBroker": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include broker (Erlang node name) field in the output (optional metadata)."
+        },
+
+        "logLevel": {
+          "type": "string",
+          "default": "debug",
+          "description": "VMQ enrich log level."
+        },
+
+        "logPayloadSample": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, log first 64 bytes of raw inbound payload."
+        }
+      }
+    },
+
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "size": { "type": "string", "default": "2Gi" },
+        "storageClassName": { "type": "string" },
+        "accessModes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadOnlyMany"]
+          },
+          "default": ["ReadWriteOnce"]
+        }
+      }
+    },
+
+    "resources": {
+      "type": "object",
+      "description": "Kubernetes resource requests/limits; passed through as-is.",
+      "additionalProperties": true
+    },
+
+    "podSecurityContext": {
+      "type": "object",
+      "additionalProperties": true
+    },
+
+    "securityContext": {
+      "type": "object",
+      "additionalProperties": true
+    },
+
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "affinity": {
+      "type": "object",
+      "additionalProperties": true
+    },
+
+    "tolerations": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "extraEnv": {
+      "type": "array",
+      "description": "Additional environment variables to inject into the container (full env var objects).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "value": { "type": "string" },
+          "valueFrom": { "type": "object" }
+        },
+        "required": ["name"]
+      },
+      "default": []
+    },
+
+    "topologySpreadConstraints": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true },
+      "default": []
+    },
+
+    "pdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "minAvailable": { "type": ["string", "integer"] },
+        "maxUnavailable": { "type": ["string", "integer"] }
+      }
+    },
+
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "console": { "type": "string" },
+        "level": { "type": "string" }
+      }
+    }
+  }
+}

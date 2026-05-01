@@ -1,0 +1,90 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnect
+metadata:
+  name: {{ .Values.connect.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: kafka-connect
+  annotations:
+    # Let Strimzi manage KafkaConnector CRs instead of REST API
+    strimzi.io/use-connector-resources: "true"
+spec:
+  {{- if .Values.connect.version }}
+  version: {{ .Values.connect.version | quote }}
+  {{- end }}
+
+  replicas: {{ .Values.connect.replicas }}
+
+  bootstrapServers: "{{ .Values.kafka.clusterName }}-kafka-bootstrap.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.kafka.bootstrapPort }}"
+
+  # Image with all required Kafka Connect plugins (built & pushed by you)
+  {{- if .Values.connect.image }}
+  image: {{ .Values.connect.image | quote }}
+  {{- end }}
+
+  {{- if and .Values.kafka.auth.enabled (eq .Values.kafka.auth.type "scram-sha-512") }}
+  authentication:
+    type: scram-sha-512
+    username: {{ .Values.kafka.auth.username | quote }}
+    passwordSecret:
+      secretName: {{ .Values.kafka.auth.passwordSecretName | quote }}
+      password: {{ .Values.kafka.auth.passwordKey | quote }}
+  {{- end }}
+
+  {{- if .Values.connect.imagePullSecrets }}
+  template:
+    pod:
+      imagePullSecrets:
+      {{- range .Values.connect.imagePullSecrets }}
+        - name: {{ .name | quote }}
+      {{- end }}
+      {{- if .Values.connect.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.connect.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.connect.tolerations }}
+      tolerations:
+        {{- toYaml .Values.connect.tolerations | nindent 8 }}
+      {{- end }}
+  {{- else if or .Values.connect.nodeSelector .Values.connect.tolerations }}
+  template:
+    pod:
+      {{- if .Values.connect.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.connect.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.connect.tolerations }}
+      tolerations:
+        {{- toYaml .Values.connect.tolerations | nindent 8 }}
+      {{- end }}
+  {{- end }}
+
+  resources:
+    requests:
+      cpu: {{ .Values.connect.resources.requests.cpu | quote }}
+      memory: {{ .Values.connect.resources.requests.memory | quote }}
+    limits:
+      cpu: {{ .Values.connect.resources.limits.cpu | quote }}
+      memory: {{ .Values.connect.resources.limits.memory | quote }}
+
+  # JVM options
+  jvmOptions:
+    "-Xms": {{ .Values.connect.jvmOptions.Xms | quote }}
+    "-Xmx": {{ .Values.connect.jvmOptions.Xmx | quote }}
+
+  # Worker group and internal topics
+  groupId: {{ .Values.connect.config.groupId | quote }}
+  configStorageTopic: {{ .Values.connect.config.configStorageTopic | quote }}
+  statusStorageTopic: {{ .Values.connect.config.statusStorageTopic | quote }}
+  offsetStorageTopic: {{ .Values.connect.config.offsetStorageTopic | quote }}
+
+  config:
+    offset.storage.replication.factor: {{ .Values.connect.config.internalTopicReplicationFactor }}
+    config.storage.replication.factor: {{ .Values.connect.config.internalTopicReplicationFactor }}
+    status.storage.replication.factor: {{ .Values.connect.config.internalTopicReplicationFactor }}
+
+    # Converters
+    key.converter: {{ .Values.connect.config.keyConverter | quote }}
+    value.converter: {{ .Values.connect.config.valueConverter | quote }}
+    key.converter.schemas.enable: {{ .Values.connect.config.keyConverterSchemasEnable }}
+    value.converter.schemas.enable: {{ .Values.connect.config.valueConverterSchemasEnable }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: traefik-dashboard
+description: Expose and protect the k3s bundled Traefik dashboard via IngressRoute + basic auth
+type: application
+version: 0.1.0
+appVersion: "3"

@@ -1,0 +1,52 @@
+# Helm dependencies / generated chart archives
+headlamp/charts/
+*/charts/
+*.tgz
+Chart.lock.tmp
+
+# Private values and environment files
+private/
+secrets/
+*.private.yaml
+*.private.yml
+*.local.yaml
+*.local.yml
+private.env
+.env
+.env.*
+
+# Kubernetes secrets and kubeconfigs
+*.kubeconfig
+kubeconfig
+.kube/
+*-secret.yaml
+secret-*.yaml
+
+# Credentials and keys
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+htpasswd
+*.htpasswd
+
+# Logs and generated output
+*.log
+logs/
+*.out
+*.tmp
+
+# Test payloads / captured data
+*.pcap
+*.pcapng
+*.bin
+!msg.example.bin
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

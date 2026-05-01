@@ -1,0 +1,24 @@
+{{- range .Values.users }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    strimzi.io/cluster: {{ $.Values.kafka.clusterName }}
+spec:
+  authentication:
+    type: scram-sha-512
+---
+{{- end }}
+
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: {{ .Values.kafkaUIauth.username }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    strimzi.io/cluster: {{ .Values.kafka.clusterName }}
+spec:
+  authentication:
+    type: {{ .Values.kafkaUIauth.type }}

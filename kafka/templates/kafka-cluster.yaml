@@ -1,0 +1,45 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: {{ .Values.kafka.clusterName }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+spec:
+  kafka:
+    version: {{ .Values.kafka.version }}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+        authentication:
+          type: scram-sha-512
+    logging:
+      type: {{ .Values.kafka.logging.type }}
+      loggers:
+        {{- toYaml .Values.kafka.logging.loggers | nindent 8 }}
+    config:
+      auto.create.topics.enable: {{ .Values.kafka.config.auto_create_topics_enable }}
+      delete.topic.enable: {{ .Values.kafka.config.delete_topic_enable }}
+  entityOperator:
+    topicOperator:
+      {{- if .Values.kafka.entityOperator.topicOperator }}
+      {{- toYaml .Values.kafka.entityOperator.topicOperator | nindent 6 }}
+      {{- else }}
+      {}
+      {{- end }}
+    userOperator:
+      {{- if .Values.kafka.entityOperator.userOperator }}
+      {{- toYaml .Values.kafka.entityOperator.userOperator | nindent 6 }}
+      {{- else }}
+      {}
+      {{- end }}
+    {{- if .Values.kafka.entityOperator.template }}
+    template:
+      {{- if .Values.kafka.entityOperator.template.pod }}
+      pod:
+        {{- toYaml .Values.kafka.entityOperator.template.pod | nindent 8 }}
+      {{- end }}
+    {{- end }}

@@ -1,0 +1,37 @@
+Kafka Local PersistentVolumes have been created.
+
+📦 StorageClass:
+  {{ .Values.storageClass.name }}
+
+📁 Broker PersistentVolumes:
+{{- range .Values.brokerPersistentVolumes }}
+  - Name: {{ .name }}
+    Node: {{ .node }}
+    Path: {{ .path }}
+    Size: {{ $.Values.brokerPVCsize }}
+{{- end }}
+
+📁 Controller PersistentVolumes:
+{{- range .Values.controllerPersistentVolumes }}
+  - Name: {{ .name }}
+    Node: {{ .node }}
+    Path: {{ .path }}
+    Size: {{ $.Values.controllerPVCsize }}
+{{- end }}
+
+📌 Volume binding mode: {{ .Values.storageClass.volumeBindingMode }}
+📌 Reclaim policy: {{ .Values.persistentVolumeReclaimPolicy }}
+
+To verify volumes are available and bound:
+
+  kubectl get pv | grep {{ .Values.storageClass.name }}
+
+To describe a PV:
+
+  kubectl describe pv <pv-name>
+
+⚠️ Make sure Kafka brokers are scheduled on the correct nodes with matching `nodeAffinity`.
+
+📘 Tip: You can inspect node names using:
+
+  kubectl get nodes -o wide

@@ -1,0 +1,7 @@
+Grafana deployed.
+
+Ingress:
+  http://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+
+Datasource:
+  - ClickHouse (uid: clickhouse) is provisioned.

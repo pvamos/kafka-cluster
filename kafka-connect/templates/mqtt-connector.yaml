@@ -1,0 +1,41 @@
+{{- /*
+Render one or more MQTT source connectors.
+Prefer the new .Values.mqttSources list.
+Fallback to legacy .Values.mqttSource (backward compatible).
+*/ -}}
+
+{{- define "kafka-connect.mqttConnector" -}}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: {{ .src.name }}
+  namespace: {{ .root.Values.namespace }}
+  labels:
+    # Must match KafkaConnect metadata.name
+    strimzi.io/cluster: {{ .root.Values.connect.name }}
+spec:
+  class: {{ .src.class | quote }}
+  tasksMax: {{ .src.tasksMax | default 1 }}
+
+  {{- if and .src.autoRestart .src.autoRestart.enabled }}
+  autoRestart:
+    enabled: true
+    {{- if .src.autoRestart.maxRestarts }}
+    maxRestarts: {{ .src.autoRestart.maxRestarts }}
+    {{- end }}
+  {{- end }}
+
+  config:
+{{- toYaml .src.config | nindent 4 }}
+{{- end }}
+
+{{- if .Values.mqttSources }}
+  {{- range $i, $src := .Values.mqttSources }}
+    {{- if $src.enabled }}
+{{ include "kafka-connect.mqttConnector" (dict "root" $ "src" $src) }}
+---
+    {{- end }}
+  {{- end }}
+{{- else if .Values.mqttSource.enabled }}
+{{ include "kafka-connect.mqttConnector" (dict "root" $ "src" .Values.mqttSource) }}
+{{- end }}

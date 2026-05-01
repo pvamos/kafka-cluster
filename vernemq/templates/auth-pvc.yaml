@@ -1,0 +1,24 @@
+# vernemq/templates/auth-pvc.yaml
+{{- /* Creates the shared RWX PVC only when we're not using an existing claim. */ -}}
+{{- if and .Values.authFile.enabled .Values.authFile.pvc.enabled (not .Values.authFile.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-auth" .Release.Name }}
+  labels:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    # Ensure the PVC exists before the bootstrap Job runs.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  accessModes: {{ toJson (default (list "ReadWriteMany") .Values.authFile.pvc.accessModes) }}
+  {{- if .Values.authFile.pvc.storageClassName }}
+  storageClassName: {{ .Values.authFile.pvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ default "1Gi" .Values.authFile.pvc.size | quote }}
+{{- end }}

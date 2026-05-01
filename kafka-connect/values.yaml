@@ -1,0 +1,280 @@
+# Namespace where KafkaConnect will be created.
+# Usually this is the same as your Kafka cluster namespace.
+namespace: kafka
+
+# Kafka cluster information (must match your 'kafka' Helm chart)
+kafka:
+  # Kafka cluster name (Kafka CR 'metadata.name')
+  clusterName: gravelines
+
+  # Listener details. We assume internal plaintext + SCRAM as you already use.
+  bootstrapService: "gravelines-kafka-bootstrap"
+  bootstrapPort: 9092
+
+  auth:
+    enabled: true
+    type: scram-sha-512
+    # KafkaUser to be used by Kafka Connect (must exist, e.g. created by 'kafka' chart)
+    username: connect
+    # Secret created by Strimzi for that KafkaUser (usually same as username)
+    passwordSecretName: connect
+    # Key in the secret holding the password
+    passwordKey: password
+
+# KafkaConnect cluster configuration
+connect:
+  # Name of the KafkaConnect resource
+  name: gravelines
+
+  # Optional: align KafkaConnect version with Kafka
+  version: 4.1.1
+
+  # Number of Kafka Connect worker pods
+  replicas: 3
+
+  # Connect image to use. You can bake your MQTT / S3 / custom connectors into this.
+  # Example: reg.example.com/envsensor/kafka-connect:latest
+  image: "reg.example.com/envsensor/kafka-connect:0.0.6"
+
+  # Optional imagePullSecrets (if using Harbor)
+  imagePullSecrets:
+    - name: envsensor-reg
+
+  # Resources for the Connect worker pods
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      cpu: "1500m"
+      memory: 2560Mi
+
+  # Optional pod scheduling hints (if you want Connect on kafka nodes, etc.)
+  nodeSelector: {}
+    # node-role.kubernetes.io/kafka: "true"
+
+  tolerations: []
+    # - key: node-role.kubernetes.io/kafka
+    #   operator: Exists
+    #   effect: NoSchedule
+
+  # Kafka Connect worker configuration
+  config:
+    # Worker group id
+    groupId: "gravelines"
+
+    # Internal Kafka topics for Connect
+    offsetStorageTopic: "gravelines-connect-offsets"
+    configStorageTopic: "gravelines-connect-configs"
+    statusStorageTopic: "gravelines-connect-status"
+
+    # Replication factors for the internal topics
+    internalTopicReplicationFactor: 3
+
+    # Converters (JSON without schemas is simple and works well)
+    # NOTE: These are worker defaults. Individual connectors below can override
+    #       value.converter when they need raw bytes (protobuf).
+    keyConverter: "org.apache.kafka.connect.json.JsonConverter"
+    valueConverter: "org.apache.kafka.connect.json.JsonConverter"
+    keyConverterSchemasEnable: false
+    valueConverterSchemasEnable: false
+
+  # pin the heap instead of relying only on STRIMZI_DYNAMIC_HEAP_PERCENTAGE
+  jvmOptions:
+    Xms: "1280m"
+    Xmx: "1280m"
+
+# ------------------------------------------------------------------------------
+# MQTT source connectors (KafkaConnector CRs) for VerneMQ enriched topics
+#
+# We use TWO separate connectors + TWO Kafka topics:
+#   - sensors-json      : JSON envelope from VerneMQ enrich plugin
+#   - sensors-protobuf  : Protobuf envelope from VerneMQ enrich plugin (raw bytes)
+#
+# This matches your "Option B" approach.
+#
+# IMPORTANT:
+# - The chart templates must be updated to render mqttSources[] (list), not mqttSource.
+# - Each connector can set its own KCQL converter and its own value.converter.
+# ------------------------------------------------------------------------------
+
+mqttSources:
+  # --------------------------------------------------------------------------
+  #    Protobuf enriched MQTT messages -> Kafka topic: sensors-protobuf
+  #    MQTT subscription: enriched/sensors-protobuf/#
+  #
+  # Key points:
+  # - Do NOT use JsonSimpleConverter here (it will try to parse protobuf as JSON).
+  # - Use the BytesConverter in KCQL (or omit WITHCONVERTER entirely).
+  # - Override value.converter to ByteArrayConverter so Kafka receives raw bytes.
+  # --------------------------------------------------------------------------
+  - enabled: true
+    name: "envsensor-mqtt-enriched-protobuf-source"
+
+    # Lenses Stream Reactor MQTT Source connector
+    class: "io.lenses.streamreactor.connect.mqtt.source.MqttSourceConnector"
+
+    tasksMax: 1
+
+    autoRestart:
+      enabled: true
+      maxRestarts: 20
+
+    config:
+      # VerneMQ internal listener in-cluster
+      connect.mqtt.hosts: "tcp://vernemq-internal.vernemq.svc.cluster.local:1883"
+
+      # Auth (matches your vernemq auth bootstrap)
+      connect.mqtt.username: "kafka-connect"
+      connect.mqtt.password: "REPLACE_ME"
+
+      # IMPORTANT: must be unique per connector (otherwise they disconnect each other)
+      connect.mqtt.client.id: "kconnect-enriched-sensors-protobuf"
+
+      # QoS / connection behaviour
+      connect.mqtt.service.quality: "1"
+      connect.mqtt.timeout: "3000"
+      connect.mqtt.clean: "true"
+      connect.mqtt.keep.alive: "5000"
+
+      # Error / retry behaviour (optional but recommended)
+      connect.mqtt.error.policy: "THROW"
+      connect.mqtt.retry.interval: "60000"
+      connect.mqtt.max.retries: "20"
+      connect.mqtt.retained.messages: "false"
+      connect.mqtt.converter.throw.on.error: "false"
+      connect.mqtt.log.message: "false"
+
+      # **KCQL: MQTT → Kafka**
+      # Subscribe to enriched/sensors-protobuf/# and write RAW BYTES to Kafka 'sensors-protobuf'
+      connect.mqtt.kcql: >
+        INSERT INTO sensors
+        SELECT * FROM `envsensor-enriched/#`
+        WITHCONVERTER=`io.lenses.streamreactor.connect.converters.source.BytesConverter`
+
+      # Polling / misc
+      connect.mqtt.polling.timeout: "1000"
+      connect.mqtt.share.replicate: "false"
+      connect.progress.enabled: "false"
+      connect.mqtt.process.duplicates: "false"
+
+      # Override value converter to keep the protobuf bytes as bytes in Kafka.
+      # (Key can remain JSON or string; value MUST be bytes.)
+      value.converter: "org.apache.kafka.connect.converters.ByteArrayConverter"
+      key.converter: "org.apache.kafka.connect.storage.StringConverter"
+
+# ------------------------------------------------------------------------------
+# Backward-compatible single connector block (deprecated)
+#
+# Your templates may previously have used .Values.mqttSource.
+# After updating templates to mqttSources[] this block is no longer used.
+# Keep it commented-out as a reference for older deployments.
+# ------------------------------------------------------------------------------
+# mqttSource:
+#   enabled: true
+#   name: "mqtt-enriched-sensors-source"
+#   class: "io.lenses.streamreactor.connect.mqtt.source.MqttSourceConnector"
+#   tasksMax: 1
+#   autoRestart:
+#     enabled: true
+#     maxRestarts: 10
+#   config:
+#     connect.mqtt.hosts: "tcp://vernemq-internal.vernemq.svc.cluster.local:1883"
+#     connect.mqtt.username: "test"
+#     connect.mqtt.password: "testpass"
+#     connect.mqtt.service.quality: "1"
+#     connect.mqtt.kcql: >
+#       INSERT INTO sensors
+#       SELECT * FROM `enriched/sensors/#`
+#       WITHCONVERTER=`io.lenses.streamreactor.connect.converters.source.JsonSimpleConverter`
+
+
+connectors:
+  s3Sink:
+    enabled: true
+
+    # Kubernetes object name (KafkaConnector.metadata.name)
+    name: "envsensor-s3-readings-csv-gzip-sink"
+
+    # Must match the KafkaConnect resource name that runs the connector(s)
+    # (KafkaConnector.metadata.labels.strimzi.io/cluster)
+    connectCluster: "gravelines"
+
+    # Confluent S3 Sink connector class
+    class: "io.confluent.connect.s3.S3SinkConnector"
+
+    # KafkaConnector.spec.tasksMax (integer)
+    tasksMax: 1
+
+    # Optional
+    pause: false
+
+    # All connector config is defined here.
+    # IMPORTANT: keep everything as strings (the template quotes values).
+    config:
+      # Source topics
+      topics: "sensors"
+
+      # Converters (keep value as bytes all the way through)
+      key.converter: "org.apache.kafka.connect.storage.StringConverter"
+      value.converter: "org.apache.kafka.connect.converters.ByteArrayConverter"
+
+      # SMT: protobuf BYTES -> CSV row UTF-8 BYTES
+      # SMT chain (single, comma-separated list)
+      transforms: "EncodeCsv"
+      transforms.EncodeCsv.type: "net.envsensor.kafka.connect.smt.EnvsensorProtobufToCsv$Value"
+      transforms.EncodeCsv.on.error: "fail"
+
+      # S3 credentials (recommend moving to env/config providers later)
+      aws.access.key.id: "CHANGE_ME_S3_LAKE_ACCESS_KEY_ID"
+      aws.secret.access.key: "CHANGE_ME_S3_LAKE_SECRET_ACCESS_KEY"
+
+      # S3 target
+      s3.bucket.name: "envsensor-lake"
+      
+      # NOTE: Confluent requires an AWS-region string (like us-east-1 here) here (OVH "gra" is not accepted).
+      # In practice, S3-compatible endpoints usually work with any valid AWS region string.
+      s3.region: "example-region"
+
+      # S3-compatible endpoint (OVH)
+      storage.class: "io.confluent.connect.s3.storage.S3Storage"
+      store.url: "https://s3.example.com"
+      s3.path.style.access.enabled: "true"
+
+      # Output layout
+      topics.dir: "readings"
+      directory.delim: "/"
+      file.delim: "-"
+
+      # Partitioning: hourly folders dt=YYYY-MM-DD/h=HH (based on wallclock time)
+      partitioner.class: "io.confluent.connect.storage.partitioner.TimeBasedPartitioner"
+      partition.duration.ms: "3600000"
+      path.format: "'dt='yyyy-MM-dd/'h='HH"
+      locale: "en-US"
+      timezone: "UTC"
+      timestamp.extractor: "Wallclock"
+
+      # ByteArrayFormat: write each record value as a line
+      format.class: "io.confluent.connect.s3.format.bytearray.ByteArrayFormat"
+      format.bytearray.extension: ".csv"
+      format.bytearray.separator: "\n"
+
+      # Handle tombstones safely
+      behavior.on.null.values: "ignore"
+      schema.compatibility: "NONE"
+
+      # Commit cadence:
+      # - rotate.schedule.interval.ms enforces clock-aligned commits
+      # - flush.size must be high enough so you don't commit early due to record count
+      #
+      # 10 minutes = 600000
+      # 20 minutes = 1200000
+      rotate.schedule.interval.ms: "1200000"
+      flush.size: "10000000"
+
+      # Compression type for files written to S3.
+      # Available values: none, gzip.
+      s3.compression.type: "gzip"
+      # Compression level for files written to S3
+      # Valid Values: -1 for system default, or [0,…,9] for levels between no compression and best compression
+      s3.compression.level: "9"

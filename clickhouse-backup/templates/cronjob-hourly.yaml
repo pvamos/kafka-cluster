@@ -1,0 +1,182 @@
+# clickhouse-backup/templates/cronjob-hourly.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "clickhouse-backup.fullname" . }}-hourly
+  namespace: {{ .Values.namespace | quote }}
+spec:
+  schedule: {{ .Values.schedules.hourly | quote }}
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 6
+  failedJobsHistoryLimit: 6
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: {{ include "clickhouse-backup.fullname" . }}
+          restartPolicy: Never
+          containers:
+            - name: backup-hourly
+              image: {{ .Values.images.clickhouseClient | quote }}
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: {{ .Values.resources.backupJob.requests.cpu | quote }}
+                  memory: {{ .Values.resources.backupJob.requests.memory | quote }}
+                limits:
+                  cpu: {{ .Values.resources.backupJob.limits.cpu | quote }}
+                  memory: {{ .Values.resources.backupJob.limits.memory | quote }}
+              env:
+                - name: CH_HOST
+                  value: {{ .Values.clickhouse.host | quote }}
+                - name: CH_PORT
+                  value: {{ .Values.clickhouse.port | quote }}
+                - name: CH_CLUSTER
+                  value: {{ .Values.clickhouse.clusterName | quote }}
+                - name: CH_DB
+                  value: {{ .Values.clickhouse.database | quote }}
+                - name: CH_TABLE
+                  value: {{ .Values.clickhouse.table | quote }}
+                - name: CH_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.authSecretName | quote }}
+                      key: username
+                - name: CH_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.authSecretName | quote }}
+                      key: password
+              command: ["/bin/sh","-ec"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  DATE="$(date -u +%F)"
+                  HOUR="$(date -u +%H)"
+                  DEST="{{ .Values.s3.prefix }}/{{ .Values.clickhouse.database }}.{{ .Values.clickhouse.table }}/hourly/${DATE}/${HOUR}"
+                  BASE="{{ .Values.s3.prefix }}/{{ .Values.clickhouse.database }}.{{ .Values.clickhouse.table }}/daily/${DATE}"
+                  MARKER="{{ .Values.s3.prefix }}/{{ .Values.clickhouse.database }}.{{ .Values.clickhouse.table }}/state/daily_done/${DATE}.tsv"
+
+                  echo "Hourly incremental backup: ${CH_DB}.${CH_TABLE} -> ${DEST} (base=${BASE})"
+                  echo "Target ClickHouse: ${CH_HOST}:${CH_PORT}"
+                  echo "Daily marker object: ${MARKER}"
+
+                  LAST_OUT=""
+                  run_ch() {
+                    set +e
+                    LAST_OUT="$(clickhouse-client \
+                      --host "${CH_HOST}" --port "${CH_PORT}" \
+                      --user "${CH_USER}" --password "${CH_PASS}" \
+                      --connect_timeout 5 \
+                      --send_timeout 60 \
+                      --receive_timeout 3600 \
+                      --query "$1" 2>&1)"
+                    rc=$?
+                    set -e
+                    echo "${LAST_OUT}"
+                    return $rc
+                  }
+
+                  # Skip rule: if daily completed recently (based on marker written by DAILY job),
+                  # then skip this hourly once (the "right after daily" run).
+                  skip_check_q="
+                  SELECT ifNull(
+                    max(ts) >= now() - INTERVAL {{ .Values.backup.skipHourlyAfterDailyMinutes }} MINUTE,
+                    0
+                  )
+                  FROM s3({{ .Values.s3.namedCollection }},
+                    filename='${MARKER}',
+                    format='TSV',
+                    structure='ts DateTime')
+                  SETTINGS s3_ignore_file_doesnt_exist=1
+                  "
+
+                  if run_ch "${skip_check_q}"; then
+                    if echo "${LAST_OUT}" | tr -d '\r' | head -n1 | grep -qx "1"; then
+                      echo "Daily completed within last {{ .Values.backup.skipHourlyAfterDailyMinutes }} minutes; skipping this hourly run."
+                      exit 0
+                    fi
+                  else
+                    echo "WARNING: marker check failed; proceeding with hourly backup attempt."
+                  fi
+
+                  inc_query="
+                  BACKUP TABLE ${CH_DB}.${CH_TABLE}
+                  TO S3({{ .Values.s3.namedCollection }}, '${DEST}')
+                  SETTINGS
+                    base_backup = S3({{ .Values.s3.namedCollection }}, '${BASE}'),
+                    compression_method='{{ .Values.backup.compressionMethod }}',
+                    compression_level={{ .Values.backup.compressionLevel }}
+                  "
+
+                  if run_ch "${inc_query}"; then
+                    echo "Hourly incremental backup succeeded."
+                    exit 0
+                  fi
+
+                  # If this job is retried manually or overlaps, don't fail just because dest exists.
+                  if echo "${LAST_OUT}" | grep -q "BACKUP_ALREADY_EXISTS"; then
+                    echo "Hourly backup already exists at ${DEST}; treating as success."
+                    exit 0
+                  fi
+
+                  # If the base backup doesn't exist yet:
+                  # - Create the daily base backup (bootstrap)
+                  # - DO NOT create an hourly in this same run (per requirement)
+                  if echo "${LAST_OUT}" | grep -q "BACKUP_NOT_FOUND"; then
+                    echo "Base backup not found at ${BASE}. Creating daily base backup now (bootstrap) and skipping hourly creation..."
+
+                    base_query="
+                    BACKUP TABLE ${CH_DB}.${CH_TABLE}
+                    TO S3({{ .Values.s3.namedCollection }}, '${BASE}')
+                    SETTINGS
+                      compression_method='{{ .Values.backup.compressionMethod }}',
+                      compression_level={{ .Values.backup.compressionLevel }}
+                    "
+
+                    # Marker contains a single DateTime value: when daily completed successfully.
+                    marker_q="
+                    INSERT INTO FUNCTION s3({{ .Values.s3.markerNamedCollection }},
+                      filename='${MARKER}',
+                      format='TSV',
+                      structure='ts DateTime')
+                    SELECT now()
+                    SETTINGS s3_truncate_on_insert=1
+                    "
+
+                    if run_ch "${base_query}"; then
+                      echo "Daily backup succeeded. Writing daily marker..."
+                      run_ch "${marker_q}"
+                      echo "Daily marker written."
+                      echo "Daily base backup created at ${BASE}. Hourly is intentionally skipped this run."
+                      exit 0
+                    fi
+
+                    if echo "${LAST_OUT}" | grep -q "BACKUP_ALREADY_EXISTS"; then
+                      echo "Daily base backup already exists at ${BASE}. Hourly is intentionally skipped this run."
+                      exit 0
+                    fi
+
+                    # If a backup is currently running (e.g., the daily CronJob), with allow_concurrent_backups=false
+                    # ClickHouse will reject this. In that case we skip (do not fail).
+                    if echo "${LAST_OUT}" | grep -Eiq "concurrent|already.*running|allow_concurrent_backups"; then
+                      echo "Another backup appears to be in progress; skipping this hourly run."
+                      exit 0
+                    fi
+
+                    echo "Bootstrap daily base backup failed (unexpected error)."
+                    exit 1
+                  fi
+
+                  # If a backup is in progress and concurrency is disabled, treat as skip (avoid flapping failures).
+                  if echo "${LAST_OUT}" | grep -Eiq "concurrent|already.*running|allow_concurrent_backups"; then
+                    echo "Another backup appears to be in progress; skipping this hourly run."
+                    exit 0
+                  fi
+
+                  echo "Hourly incremental backup failed (non-bootstrap error)."
+                  exit 1

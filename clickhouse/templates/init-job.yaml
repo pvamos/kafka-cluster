@@ -1,0 +1,371 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.initJob.backoffLimit | default 3 }}
+  ttlSecondsAfterFinished: {{ .Values.initJob.ttlSecondsAfterFinished | default 604800 }}
+  template:
+    spec:
+      # IMPORTANT: keep a failed pod around for inspection/logs (no CrashLoop restarts)
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: {{ .Values.image.server | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KAFKA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.authSecretName | quote }}
+                  key: username
+            - name: KAFKA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.authSecretName | quote }}
+                  key: password
+
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: username
+            - name: CH_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-auth
+                  key: password
+
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |-
+              set -eu
+
+              # Use a deterministic replica service (not the load-balanced "clickhouse-{{ .Values.chi.name }}")
+              HOST="chi-{{ .Values.chi.name }}-{{ .Values.chi.clusterName }}-0-0"
+              PORT="9000"
+
+              CLUSTER="{{ .Values.chi.clusterName }}"
+              DB="{{ .Values.db.name }}"
+              TABLE="{{ .Values.db.table }}"
+
+              chq() {
+                clickhouse-client --host "$HOST" --port "$PORT" \
+                  --user "$CH_USER" --password "$CH_PASS" "$@"
+              }
+
+              chq_host() {
+                _h="$1"; _p="$2"; shift 2
+                clickhouse-client --host "$_h" --port "$_p" \
+                  --user "$CH_USER" --password "$CH_PASS" "$@"
+              }
+
+              echo "Waiting for ClickHouse TCP/auth at ${HOST}:${PORT} ..."
+              ok=0
+              for i in $(seq 1 240); do
+                if chq --query "SELECT 1" >/dev/null 2>&1; then
+                  ok=1
+                  break
+                fi
+                sleep 2
+              done
+              [ "$ok" -eq 1 ] || { echo "Timed out waiting for ClickHouse auth"; exit 1; }
+
+              expected=$(( {{ .Values.chi.shards }} * {{ .Values.chi.replicas }} ))
+              echo "Waiting for system.clusters to show ${expected} hosts for ${CLUSTER} ..."
+              ok=0
+              for i in $(seq 1 240); do
+                c="$(chq --query "SELECT count() FROM system.clusters WHERE cluster='${CLUSTER}'" | tr -d '[:space:]')"
+                if [ "${c:-0}" -ge "$expected" ]; then ok=1; break; fi
+                sleep 2
+              done
+              [ "$ok" -eq 1 ] || { echo "Timed out waiting for system.clusters"; exit 1; }
+
+              # IMPORTANT:
+              # We intentionally DO NOT use ON CLUSTER here.
+              # Bootstrap is done by applying idempotent DDL to EACH host discovered from system.clusters.
+              # This avoids distributed DDL queue issues (timeouts / host identity mismatches).
+              echo "Discovering cluster hosts from system.clusters (cluster=${CLUSTER})..."
+              NODES="$(chq --query "SELECT host_name, port FROM system.clusters WHERE cluster='${CLUSTER}' ORDER BY shard_num, replica_num FORMAT TSV")"
+              [ -n "$NODES" ] || { echo "No hosts found in system.clusters for cluster=${CLUSTER}"; exit 1; }
+
+              echo "Waiting for Keeper connectivity on ALL hosts via system.zookeeper..."
+              echo "$NODES" | while IFS="$(printf '\t')" read -r h p; do
+                echo " -> ${h}:${p}"
+
+                ok=0
+                for i in $(seq 1 240); do
+                  if chq_host "$h" "$p" --query "SELECT 1" >/dev/null 2>&1; then
+                    ok=1
+                    break
+                  fi
+                  sleep 2
+                done
+                [ "$ok" -eq 1 ] || { echo "Timed out waiting for ClickHouse auth on ${h}:${p}"; exit 1; }
+
+                ok=0
+                for i in $(seq 1 240); do
+                  if chq_host "$h" "$p" --query "SELECT count() FROM system.zookeeper WHERE path='/' SETTINGS allow_unrestricted_reads_from_keeper = 1" >/dev/null 2>&1; then
+                    ok=1
+                    break
+                  fi
+                  sleep 2
+                done
+                [ "$ok" -eq 1 ] || { echo "Timed out waiting for Keeper from ${h}:${p}"; exit 1; }
+              done
+
+              echo "Applying schema locally on each host (no ON CLUSTER)..."
+              echo "$NODES" | while IFS="$(printf '\t')" read -r h p; do
+                echo "== DDL on ${h}:${p} =="
+
+                chq_host "$h" "$p" --multiquery <<SQL
+              CREATE DATABASE IF NOT EXISTS ${DB};
+
+              CREATE TABLE IF NOT EXISTS ${DB}.${TABLE}
+              (
+                time DateTime64(9, 'UTC'),
+                topic LowCardinality(String),
+                ipv4 Nullable(IPv4),
+                ipv6 Nullable(IPv6),
+                user LowCardinality(String),
+                clientid LowCardinality(String),
+                broker LowCardinality(String),
+                mac UInt64,
+                rssi Int8,
+                batt UInt16,
+                esp32_t Float32,
+                bme280_t Nullable(Float32),
+                bme280_p Nullable(Float32),
+                bme280_h Nullable(Float32),
+                sht4x_t Nullable(Float32),
+                sht4x_h Nullable(Float32),
+                kafka_topic LowCardinality(String),
+                kafka_partition UInt32,
+                kafka_offset UInt64,
+                kafka_timestamp_ms Nullable(DateTime64(3, 'UTC')),
+                kafka_key String,
+                ingested_at DateTime64(3, 'UTC')
+              )
+              ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/${TABLE}', '{replica}')
+              PARTITION BY toYYYYMM(time)
+              PRIMARY KEY (topic, time)
+              ORDER BY (topic, time);
+
+              -- Drop MV first so the Kafka table can always be dropped/recreated
+              DROP TABLE IF EXISTS ${DB}.${TABLE}_mv;
+              DROP TABLE IF EXISTS ${DB}.${TABLE}_kafka;
+
+              CREATE TABLE ${DB}.${TABLE}_kafka
+              (
+                time Int64,
+                topic String,
+                ipv4 String,
+                ipv6 String,
+                user String,
+                clientid String,
+                broker String,
+                mac UInt64,
+                rssi Int8,
+                batt UInt16,
+                esp32_t Float32,
+                bme280_t Nullable(Float32),
+                bme280_p Nullable(Float32),
+                bme280_h Nullable(Float32),
+                sht4x_t Nullable(Float32),
+                sht4x_h Nullable(Float32)
+              )
+              ENGINE = Kafka
+              SETTINGS
+                kafka_broker_list = '{{ .Values.kafka.brokers }}',
+                kafka_topic_list  = '{{ .Values.kafka.topic }}',
+                kafka_group_name  = '{{ .Values.kafka.group }}',
+                kafka_num_consumers = {{ .Values.kafka.consumersPerNode }},
+                kafka_format      = 'ProtobufSingle',
+                kafka_schema      = '{{ .Values.proto.filename }}:{{ .Values.proto.message }}',
+                kafka_security_protocol = 'SASL_PLAINTEXT',
+                kafka_sasl_mechanism = 'SCRAM-SHA-512',
+                kafka_sasl_username = '${KAFKA_USER}',
+                kafka_sasl_password = '${KAFKA_PASS}',
+                kafka_max_rows_per_message = 1;
+
+              CREATE MATERIALIZED VIEW ${DB}.${TABLE}_mv
+              TO ${DB}.${TABLE}
+              AS
+              SELECT
+                fromUnixTimestamp64Nano(time, 'UTC') AS time,
+                topic,
+
+                -- IPv4: 4 raw bytes -> UInt32 -> IPv4 (with endian fix)
+                if(length(ipv4) = 4,
+                   CAST(byteSwap(reinterpretAsUInt32(ipv4)), 'IPv4'),
+                   CAST(NULL, 'Nullable(IPv4)')
+                ) AS ipv4,
+
+                -- IPv6: 16 raw bytes -> IPv6
+                if(length(ipv6) = 16,
+                   CAST(toFixedString(ipv6, 16), 'IPv6'),
+                   CAST(NULL, 'Nullable(IPv6)')
+                ) AS ipv6,
+
+                user, clientid, broker, mac,
+                rssi,
+                batt,
+                esp32_t,
+
+                if(
+                  isNull(bme280_t) AND isNotNull(bme280_p) AND isNotNull(bme280_h),
+                  toFloat32(0),
+                  bme280_t
+                ) AS bme280_t,
+                bme280_p, bme280_h,
+
+                if(
+                  isNull(sht4x_t) AND isNotNull(sht4x_h),
+                  toFloat32(0),
+                  sht4x_t
+                ) AS sht4x_t,
+                sht4x_h,
+
+                -- Kafka virtual columns
+                _topic AS kafka_topic,
+                toUInt32(_partition) AS kafka_partition,
+                _offset AS kafka_offset,
+                _timestamp_ms AS kafka_timestamp_ms,
+                _key AS kafka_key,
+                now64(3, 'UTC') AS ingested_at
+              FROM ${DB}.${TABLE}_kafka;
+
+{{- if .Values.s3Lake.enabled }}
+
+              ------------------------------------------------------------------
+              -- S3 "data lake" external view (read-only querying) using s3()
+              -- with a named collection + url override.
+              --
+              -- This avoids:
+              --  * shell backtick command substitution
+              --  * invalid S3 table-engine "filename="/ "format=" signature
+              ------------------------------------------------------------------
+
+              -- In case an earlier install created a table/view with the same name:
+              DROP VIEW IF EXISTS ${DB}.${TABLE}_s3;
+
+              CREATE VIEW envsensor.readings_s3
+              (
+                  time DateTime64(9, 'UTC'),
+                  topic String,
+                  ipv4 Nullable(IPv4),
+                  ipv6 Nullable(IPv6),
+                  user String,
+                  clientid String,
+                  broker String,
+                  mac UInt64,
+                  rssi Int8,
+                  batt UInt16,
+                  esp32_t Float32,
+                  bme280_t Nullable(Float32),
+                  bme280_p Nullable(Float32),
+                  bme280_h Nullable(Float32),
+                  sht4x_t Nullable(Float32),
+                  sht4x_h Nullable(Float32),
+                  kafka_topic String,
+                  kafka_partition UInt32,
+                  kafka_offset UInt64,
+                  kafka_timestamp_ms Nullable(DateTime64(3, 'UTC')),
+                  kafka_key String,
+                  ingested_at DateTime64(3, 'UTC')
+              )
+              AS
+              WITH
+                  /* Parse CSV strings to typed nullable floats once */
+                  toFloat32OrNull(nullIf(bme280_t, '')) AS bme280_t_raw,
+                  toFloat32OrNull(nullIf(bme280_p, '')) AS bme280_p_raw,
+                  toFloat32OrNull(nullIf(bme280_h, '')) AS bme280_h_raw,
+                  toFloat32OrNull(nullIf(sht4x_t, ''))  AS sht4x_t_raw,
+                  toFloat32OrNull(nullIf(sht4x_h, ''))  AS sht4x_h_raw
+              SELECT
+                  fromUnixTimestamp64Nano(toInt64(time_ns), 'UTC') AS time,
+                  topic AS topic,
+
+                  toIPv4OrNull(nullIf(ipv4, '')) AS ipv4,
+                  toIPv6OrNull(nullIf(ipv6, '')) AS ipv6,
+
+                  user AS user,
+                  clientid AS clientid,
+                  broker AS broker,
+
+                  -- 12-hex (or colon-separated) MAC -> UInt64
+                  -- Works for "64e833b62000" and also "64:e8:33:b6:20:00"
+                  if(
+                      nullIf(mac_hex, '') IS NULL,
+                      toUInt64(0),
+                      reinterpretAsUInt64(
+                          reverse(
+                              unhex(
+                                  lpad(lower(replaceAll(mac_hex, ':', '')), 16, '0')
+                              )
+                          )
+                      )
+                  ) AS mac,
+
+                  toInt8(rssi) AS rssi,
+                  toUInt16(batt) AS batt,
+                  toFloat32(esp32_t) AS esp32_t,
+
+                  if(
+                      isNull(bme280_t_raw) AND isNotNull(bme280_p_raw) AND isNotNull(bme280_h_raw),
+                      toFloat32(0),
+                      bme280_t_raw
+                  ) AS bme280_t,
+                  bme280_p_raw AS bme280_p,
+                  bme280_h_raw AS bme280_h,
+
+                  if(
+                      isNull(sht4x_t_raw) AND isNotNull(sht4x_h_raw),
+                      toFloat32(0),
+                      sht4x_t_raw
+                  ) AS sht4x_t,
+                  sht4x_h_raw AS sht4x_h,
+
+                  kafka_topic AS kafka_topic,
+                  toUInt32(kafka_partition) AS kafka_partition,
+                  toUInt64(kafka_offset) AS kafka_offset,
+
+                  if(
+                      kafka_timestamp_ms = '',
+                      CAST(NULL, 'Nullable(DateTime64(3, ''UTC''))'),
+                      fromUnixTimestamp64Milli(toInt64(kafka_timestamp_ms), 'UTC')
+                  ) AS kafka_timestamp_ms,
+
+                  kafka_key AS kafka_key,
+
+                  fromUnixTimestamp64Milli(toInt64(ingested_at_ms), 'UTC') AS ingested_at
+
+              FROM s3(
+                  {{ .Values.s3Lake.namedCollection }},
+                  filename='{{ .Values.s3Lake.filename }}',
+                  compression_method='{{ .Values.s3Lake.compression_method }}',
+                  format='CSV',
+                  structure='{{ .Values.s3Lake.structure }}'
+              );
+{{- end }}
+
+              SQL
+              done
+
+              echo "Verifying schema exists on all replicas (clusterAllReplicas) ..."
+              db_ok="$(chq --query "SELECT min(has_db) FROM (SELECT hostName() AS host, countIf(name='${DB}') AS has_db FROM clusterAllReplicas('${CLUSTER}','system','databases') GROUP BY host)")"
+              db_ok="$(echo "$db_ok" | tr -d '[:space:]')"
+
+              tbl_ok="$(chq --query "SELECT min(has_tbl) FROM (SELECT hostName() AS host, countIf(database='${DB}' AND name='${TABLE}') AS has_tbl FROM clusterAllReplicas('${CLUSTER}','system','tables') GROUP BY host)")"
+              tbl_ok="$(echo "$tbl_ok" | tr -d '[:space:]')"
+
+              if [ "$db_ok" = "1" ] && [ "$tbl_ok" = "1" ]; then
+                echo "Schema verified on all replicas."
+                exit 0
+              fi
+
+              echo "Schema verification failed (db_ok=${db_ok}, tbl_ok=${tbl_ok})"
+              exit 1

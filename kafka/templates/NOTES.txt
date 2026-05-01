@@ -1,0 +1,20 @@
+Kafka {{ .Values.kafka.version }} cluster '{{ .Values.kafka.clusterName }}' has been deployed using Strimzi.
+
+To view pods:
+
+  kubectl get pods -n {{ .Values.namespace }}
+
+To interact with Kafka CLI:
+
+  kubectl exec -it <kafka-broker-pod> -n {{ .Values.namespace }} -- /bin/sh
+  kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+Topics auto-created:
+{{- range .Values.topics }}
+  - {{ .name }}
+{{- end }}
+
+Kafka users created:
+{{- range .Values.users }}
+  - {{ .name }}
+{{- end }}

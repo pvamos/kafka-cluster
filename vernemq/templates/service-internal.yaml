@@ -1,0 +1,26 @@
+# vernemq/templates/service-internal.yaml
+{{- if .Values.service.internal.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ default (printf "%s-internal" .Release.Name) .Values.service.internal.name }}
+  labels:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+  {{- with .Values.service.internal.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ default "ClusterIP" .Values.service.internal.type }}
+  selector:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: mqtt-int
+      port: {{ .Values.service.internal.port | default .Values.listeners.internalPlain.port }}
+      targetPort: mqtt-int
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,27 @@
+# vernemq/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ default .Release.Name .Values.service.headless.name }}
+  labels:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+  {{- with .Values.service.headless.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  {{- if hasKey .Values.service.headless "publishNotReadyAddresses" }}
+  publishNotReadyAddresses: {{ .Values.service.headless.publishNotReadyAddresses }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: mqtt-int
+      port: {{ .Values.service.headless.port | default .Values.listeners.internalPlain.port }}  # 1883
+      targetPort: mqtt-int
+      protocol: TCP

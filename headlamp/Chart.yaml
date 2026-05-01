@@ -1,0 +1,10 @@
+apiVersion: v2
+name: headlamp-wrapper
+description: A wrapper chart for Headlamp with custom Ingress support
+type: application
+version: 1.0.0
+dependencies:
+  - name: headlamp
+    version: "0.38.0"
+    repository: https://kubernetes-sigs.github.io/headlamp/
+

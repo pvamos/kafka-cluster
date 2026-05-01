@@ -1,0 +1,191 @@
+{{- /*
+NOTES for the VerneMQ chart (vernemq/templates/NOTES.txt)
+
+This prints handy post-install guidance:
+- What was created
+- How to reach the listeners (external via HAProxy/PROXYv2 NodePort, and internal in-cluster)
+- Where the RWX auth file lives (if enabled) and how it’s initialized
+- How the MQTT→MQTT enrichment plugin is configured
+- Quick test commands
+
+It reflects the "vernemq-enrich-msg" image that republishes enriched protobuf
+to MQTT topics on the same broker.
+*/ -}}
+
+{{- $ns := .Release.Namespace -}}
+{{- $name := .Release.Name -}}
+{{- $headlessName := default .Release.Name .Values.service.headless.name -}}
+{{- $internalName := default (printf "%s-internal" .Release.Name) .Values.service.internal.name -}}
+{{- $externalName := default (printf "%s-external" .Release.Name) .Values.service.external.name -}}
+{{- $extPort := .Values.listeners.externalProxy.port -}}          {{/* containerPort (31883) */}}
+{{- $nodePort := .Values.service.external.nodePort -}}            {{/* NodePort on the nodes (31883) */}}
+{{- $intEnabled := .Values.listeners.internalPlain.enabled | default true -}}
+{{- $intPort := .Values.listeners.internalPlain.port | default 1883 -}}
+{{- $replicas := .Values.replicaCount | int -}}
+{{- $proxyProto := ternary "enabled" "disabled" .Values.listeners.externalProxy.proxyProtocol -}}
+{{- $accept := .Values.enrich.accept | default "" -}}
+{{- $defaultTarget := .Values.enrich.defaultTarget | default "" -}}
+
+--------------------------------------------------------------------------------
+VerneMQ "{{ $name }}" has been deployed to namespace "{{ $ns }}".
+--------------------------------------------------------------------------------
+
+Components
+----------
+• StatefulSet:       {{ $name }}  (replicas: {{ $replicas }})
+• Headless SVC:      {{ $headlessName }} (port mqtt-int: {{ $intPort }}) – pod identity; targets the INTERNAL listener
+{{- if $intEnabled }}
+• Internal SVC:      {{ $internalName }} (ClusterIP, port mqtt-int: {{ $intPort }}) – in-cluster client traffic, no PROXY v2
+{{- end }}
+• External SVC:      {{ $externalName }} (NodePort: {{ $nodePort }}) – for HAProxy; PROXY v2 expected towards broker
+
+Listeners
+---------
+• External listener (PROXY v2 {{ $proxyProto }}):
+  - Container port: {{ $extPort }} (pod)
+  - Kubernetes Service: NodePort {{ $nodePort }} on each selected node
+  - Reach it via your HAProxy -> node IPs -> NodePort {{ $nodePort }} (HAProxy must send PROXY v2).
+  - Note: this service is not intended for in-cluster clients.
+
+{{- if $intEnabled }}
+• Internal in-cluster listener (no PROXY v2):
+  - Service: {{ $internalName }}.{{ $ns }}.svc.cluster.local:{{ $intPort }}
+  - Liveness/Readiness probes point to this listener.
+{{- end }}
+
+Authentication (file-based)
+---------------------------
+{{- if .Values.authFile.enabled }}
+• File auth is ENABLED via vmq_passwd plugin.
+• Password file (mounted RWX): {{ .Values.authFile.mountPath }}/{{ .Values.authFile.passwordFile }}
+• PVC (shared RWX):
+  {{- if and .Values.authFile.pvc.enabled (not .Values.authFile.pvc.existingClaim) }}
+  - Created: {{ printf "%s-auth" $name }}
+  {{- else if and .Values.authFile.pvc.enabled .Values.authFile.pvc.existingClaim }}
+  - ExistingClaim: {{ .Values.authFile.pvc.existingClaim }}
+  {{- else }}
+  - (PVC disabled)
+  {{- end }}
+
+• Bootstrap job:
+  - Name: {{ $name }}-auth-bootstrap
+  - It generates/updates the passwd file from .Values.authFile.users or .Values.authFile.bootstrap.users.
+  - Re-run it safely to rotate or add users (it’s idempotent).
+
+• Reloading credentials:
+  - Bump .Values.authFile.reloadNonce (any new random string) and upgrade the release:
+      helm upgrade {{ $name }} . -n {{ $ns }} --reuse-values --set authFile.reloadNonce=$(date +%s)
+  - Pods will roll and pick up updates from the shared file.
+{{- else }}
+• File auth is DISABLED. To enable:
+    authFile:
+      enabled: true
+      users:
+        - username: "user1"
+          password: "changeme"
+{{- end }}
+
+Enrichment pipeline (MQTT → MQTT, protobuf-only)
+------------------------------------------------
+• Plugin status: {{ ternary "ENABLED" "DISABLED" (.Values.enrich.enabled | default true) }}
+• What it does: Intercepts incoming publishes and republishes an enriched protobuf message
+  to mapped MQTT topics on the SAME broker (still inside VerneMQ).
+
+• Input protobuf:
+  - envsensor.Reading
+• Output protobuf:
+  - envsensor.vernemq.EnrichedReading
+
+• Accept filters (.Values.enrich.accept):
++  {{- if $accept }}
++  {{ $accept }}
++  {{- else }}
++  (empty → accept ALL topics)
++  {{- end }}
+
+• Mapping rules (.Values.enrich.topicMap):
+{{- with .Values.enrich.topicMap }}
+{{ toYaml . | nindent 2 }}
+{{- else }}
+  (none)
+{{- end }}
+
+• Default target (.Values.enrich.defaultTarget):
+  {{- if $defaultTarget }}
+  {{ $defaultTarget }}
+  {{- else }}
+  (empty → drop if no rule matches)
+  {{- end }}
+
+• Publish QoS (.Values.enrich.qos):
+  {{ default 0 .Values.enrich.qos }}
+
+• Max output size (.Values.enrich.maxOutputSize):
+  {{ default 1048576 .Values.enrich.maxOutputSize }} bytes
+
+• Optional metadata fields (if enabled):
+  topic, user, clientid, broker
+
+Quick checks
+------------
+# Pods & services
+kubectl -n {{ $ns }} get pods -l app.kubernetes.io/name=vernemq -o wide
+kubectl -n {{ $ns }} get svc {{ $headlessName }} {{ $internalName }} {{ $externalName }}
+
+# Cluster membership
+kubectl -n {{ $ns }} exec -it {{ $name }}-0 -- vmq-admin cluster show
+
+# Verify listeners inside a pod
+kubectl -n {{ $ns }} exec -it {{ $name }}-0 -- vmq-admin listener show
+# Expect:
+#  tcp/0.0.0.0:{{ $extPort }} (proxy_protocol=on)   # external
+#  tcp/0.0.0.0:{{ $intPort }} (proxy_protocol=off)  # internal
+
+# In-cluster connectivity test (internal listener)
+{{- if $intEnabled }}
+kubectl -n {{ $ns }} run --rm -it tester --image=alpine:3.20 -- sh
+  # inside the pod:
+  apk add --no-cache mosquitto-clients
+
+  # publish RAW protobuf (envsensor.Reading) to an accepted topic (adjust user/pass if auth is enabled)
+  # (replace <RAW_PB_FILE> with a file containing a serialized envsensor.Reading)
+  mosquitto_pub -h {{ $internalName }} -p {{ $intPort }} -u <user> -P <pass> -t sensors-protobuf/dev-001 -f <RAW_PB_FILE>
+
+  # subscribe to enriched output (protobuf envsensor.vernemq.EnrichedReading)
+  mosquitto_sub -h {{ $internalName }} -p {{ $intPort }} -u <user> -P <pass> -t 'enriched/#' -v
+{{- else }}
+(Internal listener disabled; enable listeners.internalPlain.enabled to test via ClusterIP.)
+{{- end }}
+
+# Port-forward internal listener for local testing
+{{- if $intEnabled }}
+kubectl -n {{ $ns }} port-forward svc/{{ $internalName }} {{ $intPort }}:{{ $intPort }}
+  mosquitto_sub -h 127.0.0.1 -p {{ $intPort }} -u <user> -P <pass> -t '#'
+{{- end }}
+
+If using external HAProxy
+-------------------------
+• Point your HAProxy backend servers at the **node IPs** on NodePort {{ $nodePort }} (not the pod DNS names).
+• Ensure "send-proxy-v2" (PROXY v2) is enabled towards VerneMQ.
+• Keep the internal listener for cluster-local clients and health probes.
+
+Example (simplified):
+  backend vernemq_nodes
+    mode tcp
+    balance roundrobin
+    option tcp-check
+    server cp1 <node1-ip>:{{ $nodePort }} send-proxy-v2 check
+    server cp2 <node2-ip>:{{ $nodePort }} send-proxy-v2 check
+    server cp3 <node3-ip>:{{ $nodePort }} send-proxy-v2 check
+
+Uninstall
+---------
+helm uninstall {{ $name }} -n {{ $ns }}
+
+Notes
+-----
+• All tunables are sourced from values.yaml; no baked-in constants in templates.
+• For message backlog while a downstream subscriber is down:
+  - Publish enriched messages with QoS=1 (or 2 if you're brave) via .Values.enrich.qos.
+  - Ensure the downstream subscriber uses a persistent session and subscribes with QoS 1,
+    so VerneMQ will spool while it's offline.

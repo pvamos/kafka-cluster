@@ -1,0 +1,28 @@
+# vernemq/templates/service-external.yaml
+{{- if .Values.service.external.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ default (printf "%s-external" .Release.Name) .Values.service.external.name }}
+  labels:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+  {{- with .Values.service.external.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.external.type | default "NodePort" }}
+  externalTrafficPolicy: {{ .Values.service.external.externalTrafficPolicy | default "Local" }}
+  selector:
+    app.kubernetes.io/name: vernemq
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: mqtt-ext
+      port: {{ .Values.service.external.port | default .Values.listeners.externalProxy.port }}
+      targetPort: {{ .Values.service.external.port | default .Values.listeners.externalProxy.port }}
+      nodePort: {{ .Values.service.external.nodePort }}
+      protocol: TCP
+{{- end }}

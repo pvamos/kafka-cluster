@@ -1,0 +1,37 @@
+{{- range .Values.kafkaNodePools }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    strimzi.io/cluster: {{ $.Values.kafka.clusterName }}
+spec:
+  replicas: {{ .replicas }}
+  roles:
+{{- toYaml .roles | nindent 4 }}
+  storage:
+    type: persistent-claim
+    size: {{ .storage.size }}
+    class: {{ .storage.class }}
+{{- with .resources }}
+  resources:
+    requests:
+      memory: {{ .requests.memory }}
+      cpu: {{ .requests.cpu }}
+    limits:
+      memory: {{ .limits.memory }}
+      cpu: {{ .limits.cpu }}
+{{- end }}
+{{- with .jvmOptions }}
+  jvmOptions:
+{{- toYaml . | nindent 4 }}
+{{- end }}
+{{- $pod := (index . "template" "pod") | default dict }}
+{{- if $pod }}
+  template:
+    pod:
+{{- toYaml $pod | nindent 6 }}
+{{- end }}
+---
+{{- end }}

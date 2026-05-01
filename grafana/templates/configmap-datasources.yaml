@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "grafana.fullname" . }}-provisioning
+  labels:
+    {{- include "grafana.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    prune: true
+    datasources:
+      - name: ClickHouse
+        uid: clickhouse
+        type: grafana-clickhouse-datasource
+        access: proxy
+        isDefault: true
+        editable: true
+        jsonData:
+          host: {{ .Values.clickhouse.host | quote }}
+          port: {{ .Values.clickhouse.port }}
+          protocol: {{ .Values.clickhouse.protocol | quote }}
+          defaultDatabase: {{ .Values.clickhouse.database | quote }}
+          username: $CH_USERNAME
+          tlsSkipVerify: false
+          secure: false
+        secureJsonData:
+          password: $CH_PASSWORD

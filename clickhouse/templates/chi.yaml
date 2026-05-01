@@ -1,0 +1,330 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: {{ .Values.chi.name }}
+spec:
+  templates:
+    podTemplates:
+      - name: clickhouse-pod
+        metadata:
+          labels:
+            app: clickhouse
+        spec:
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            fsGroup: 101
+            fsGroupChangePolicy: "OnRootMismatch"
+
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        app: clickhouse
+
+          # Prepare writable dirs on the PVC + copy proto schemas from read-only ConfigMap
+          initContainers:
+            - name: copy-proto
+              image: {{ .Values.image.server | quote }}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsUser: 0
+                runAsGroup: 0
+              command: ["/bin/sh","-ec"]
+              args:
+                - |
+                  set -e
+
+                  # One-time ownership fix (avoid doing expensive chown every restart)
+                  if [ ! -f /var/lib/clickhouse/.permfix ]; then
+                    chown -R 101:101 /var/lib/clickhouse || true
+                    touch /var/lib/clickhouse/.permfix || true
+                  fi
+
+                  mkdir -p /var/lib/clickhouse/tmp /var/lib/clickhouse/user_files /var/lib/clickhouse/format_schemas
+                  chmod 1777 /var/lib/clickhouse/tmp || true
+                  chown -R 101:101 /var/lib/clickhouse/tmp /var/lib/clickhouse/user_files /var/lib/clickhouse/format_schemas || true
+
+                  cp -L /proto-src/*.proto /var/lib/clickhouse/format_schemas/ || true
+
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/clickhouse
+                - name: proto-src
+                  mountPath: /proto-src
+                  readOnly: true
+
+          containers:
+            - name: clickhouse
+              image: {{ .Values.image.server | quote }}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsUser: 101
+                runAsGroup: 101
+              env:
+                # Prevent entrypoint from trying to chown read-only mounts (safety)
+                - name: CLICKHOUSE_DO_NOT_CHOWN
+                  value: "1"
+                - name: S3_BACKUP_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-s3
+                      key: url
+                - name: S3_BACKUP_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-s3
+                      key: region
+                - name: S3_BACKUP_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-s3
+                      key: access_key_id
+                - name: S3_BACKUP_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-s3
+                      key: secret_access_key
+                - name: S3_BACKUP_MARKER_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-marker-s3
+                      key: url
+                - name: S3_BACKUP_MARKER_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-marker-s3
+                      key: region
+                - name: S3_BACKUP_MARKER_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-marker-s3
+                      key: access_key_id
+                - name: S3_BACKUP_MARKER_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-backup-marker-s3
+                      key: secret_access_key
+                - name: S3_LAKE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-lake-s3-read
+                      key: url
+                - name: S3_LAKE_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-lake-s3-read
+                      key: region
+                - name: S3_LAKE_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-lake-s3-read
+                      key: access_key_id
+                - name: S3_LAKE_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-lake-s3-read
+                      key: secret_access_key
+
+              resources:
+                requests:
+                  cpu: {{ .Values.resources.chi.requests.cpu | quote }}
+                  memory: {{ .Values.resources.chi.requests.memory | quote }}
+                limits:
+                  cpu: {{ .Values.resources.chi.limits.cpu | quote }}
+                  memory: {{ .Values.resources.chi.limits.memory | quote }}
+
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/clickhouse
+                # Mount proto ConfigMap somewhere read-only (NOT into format_schemas)
+                - name: proto-src
+                  mountPath: /proto-src
+                  readOnly: true
+
+          volumes:
+            - name: proto-src
+              configMap:
+                name: clickhouse-proto
+
+    # Create a predictable client Service name: clickhouse-<chi-name>
+    serviceTemplates:
+      - name: ch-client
+        generateName: "clickhouse-{chi}"
+        spec:
+          type: ClusterIP
+          ports:
+            - name: http
+              port: 8123
+              targetPort: 8123
+            - name: native
+              port: 9000
+              targetPort: 9000
+
+    volumeClaimTemplates:
+      - name: data
+        reclaimPolicy: Retain
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ .Values.storage.size | quote }}
+          storageClassName: {{ .Values.storage.className | quote }}
+
+  configuration:
+
+    files:
+      config.d/05-macros.xml: |
+        <clickhouse>
+          <macros>
+            <shard>0</shard>
+            <replica from_env="HOSTNAME"/>
+          </macros>
+        </clickhouse>
+
+      # Named collection for S3 backups
+      config.d/60-named-collections-s3.xml: |
+        <clickhouse>
+          <named_collections>
+            <s3_backup>
+              <url from_env="S3_BACKUP_URL"/>
+              <access_key_id from_env="S3_BACKUP_ACCESS_KEY_ID"/>
+              <secret_access_key from_env="S3_BACKUP_SECRET_ACCESS_KEY"/>
+            </s3_backup>
+            <s3_backup_marker>
+              <url from_env="S3_BACKUP_MARKER_URL"/>
+              <access_key_id from_env="S3_BACKUP_MARKER_ACCESS_KEY_ID"/>
+              <secret_access_key from_env="S3_BACKUP_MARKER_SECRET_ACCESS_KEY"/>
+            </s3_backup_marker>
+            <s3_lake>
+              <url from_env="S3_LAKE_URL"/>
+              <access_key_id from_env="S3_LAKE_ACCESS_KEY_ID"/>
+              <secret_access_key from_env="S3_LAKE_SECRET_ACCESS_KEY"/>
+            </s3_lake>
+          </named_collections>
+        </clickhouse>
+
+      # To prevent overlap between daily and hourly:
+      # ClickHouse can restrict concurrent backups via allow_concurrent_backups.
+      config.d/70-backup-concurrency.xml: |
+        <clickhouse>
+          <backups>
+            <allow_concurrent_backups>false</allow_concurrent_backups>
+            <allow_concurrent_restores>false</allow_concurrent_restores>
+          </backups>
+        </clickhouse>
+
+      # This config constrains ClickHouse resource usage for a 3 GiB / ~1.2 CPU pod by shrinking caches
+      # and reducing background thread pools, and it lowers the merges/mutations memory ratio
+      # to avoid MEMORY_LIMIT_EXCEEDED during heavy merges.
+      # It also overrides the MergeTree “free entries” thresholds to 1
+      # so ClickHouse can pass startup sanity checks with background_pool_size=2.
+      config.d/90-resource-tuning.xml: |
+        <clickhouse>
+          <!-- Caches -->
+          <mark_cache_size>268435456</mark_cache_size>
+          <primary_index_cache_size>134217728</primary_index_cache_size>
+          <index_mark_cache_size>67108864</index_mark_cache_size>
+          <index_uncompressed_cache_size>67108864</index_uncompressed_cache_size>
+          <!-- Background concurrency -->
+          <background_pool_size>2</background_pool_size>
+          <background_fetches_pool_size>2</background_fetches_pool_size>
+          <background_move_pool_size>1</background_move_pool_size>
+          <background_schedule_pool_size>32</background_schedule_pool_size>
+          <!-- Merges/mutations throttling -->
+          <merges_mutations_memory_usage_to_ram_ratio>0.30</merges_mutations_memory_usage_to_ram_ratio>
+          <!-- IMPORTANT: make MergeTree thresholds compatible with small background_pool_size -->
+          <merge_tree>
+            <number_of_free_entries_in_pool_to_execute_mutation>1</number_of_free_entries_in_pool_to_execute_mutation>
+            <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>1</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+            <!-- Optional but usually sensible on small pools -->
+            <number_of_free_entries_in_pool_to_lower_max_size_of_merge>1</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+          </merge_tree>
+        </clickhouse>
+
+      # This yields a single queue:
+      # /clickhouse (root) + /task_queue/ddl (path) ⇒ /clickhouse/task_queue/ddl
+      # and replicas register under:
+      # /clickhouse/task_queue/replicas
+      # This removes the /clickhouse/clickhouse/... split.
+      config.d/97-distributed_ddl.xml: |
+        <clickhouse>
+          <distributed_ddl replace="1">
+            <path>/clickhouse/task_queue/ddl</path>
+            <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
+          </distributed_ddl>
+        </clickhouse>
+
+      # Disable metric_log and asynchronous_metric_log
+      # Do NOT need TLS inside the cluster: so disable secure listeners explicitly
+      config.d/98-metric_log.xml: |
+        <clickhouse>
+          <metric_log remove="1" />
+          <asynchronous_metric_log remove="1" />
+          <openSSL remove="1"/>
+        </clickhouse>
+
+      # Possible log levels:        
+      # - none (turns off logging)
+      # - fatal
+      # - critical
+      # - error
+      # - warning
+      # - notice
+      # - information
+      # - debug
+      # - trace (default !)
+      # - test (not for production usage)
+      # https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
+      config.d/99-log_level.xml: |
+        <clickhouse>
+          <logger>
+            <level>information</level>
+          </logger>
+        </clickhouse>
+
+    zookeeper:
+      nodes:
+        - host: {{ printf "keeper-%s.%s.svc.cluster.local" .Values.keeper.name .Release.Namespace | quote }}
+          port: 2181
+
+    users:
+      default/password_sha256_hex:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-auth
+            key: password_sha256_hex
+
+      # allow in-cluster connections (pod CIDR + service CIDR + IPv6)
+      default/networks/ip:
+        - "10.42.0.0/16"
+        - "10.43.0.0/16"
+        - "::/0"
+
+      default/profile: "default"
+      default/quota: "default"
+
+    # The init Job will fail if any host can’t apply the DDL,
+    # instead of returning success while one node silently misses 'envsensor'
+    profiles:
+      default/distributed_ddl_task_timeout: 600
+      default/distributed_ddl_output_mode: throw
+
+    clusters:
+      - name: {{ .Values.chi.clusterName | quote }}
+        secret:
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-intercluster-communications
+              key: secret
+        layout:
+          shardsCount: {{ .Values.chi.shards }}
+          replicasCount: {{ .Values.chi.replicas }}
+        templates:
+          podTemplate: clickhouse-pod
+          dataVolumeClaimTemplate: data
+          serviceTemplate: ch-client

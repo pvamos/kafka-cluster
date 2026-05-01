@@ -1,0 +1,44 @@
+# StorageClass configuration for Kafka local storage
+storageClass:
+  name: kafka-local
+  volumeBindingMode: WaitForFirstConsumer
+
+persistentVolumeReclaimPolicy: Retain
+
+# PVC size per Kafka brokers: 20Gi
+# To avoid filesystem overhead issues, `/dev/sda2` XFS volumes are 20Gi + 10% spare = 22Gi
+brokerPVCsize: 20Gi
+
+# PersistentVolumes definitions for each Kafka broker
+brokerPersistentVolumes:
+  - name: worker1-pv
+    node: worker1
+    path: /var/lib/kafka
+  - name: worker2-pv
+    node: worker2
+    path: /var/lib/kafka
+  - name: worker3-pv
+    node: worker3
+    path: /var/lib/kafka
+  - name: worker4-pv
+    node: worker4
+    path: /var/lib/kafka
+  - name: worker5-pv
+    node: worker5
+    path: /var/lib/kafka
+
+# PVC size per Kafka controllers: 20Gi
+# To avoid filesystem overhead issues, `/dev/sda2` XFS volumes are 20Gi + 10% spare = 22Gi
+controllerPVCsize: 20Gi
+
+# PersistentVolumes definitions for each Kafka controller
+controllerPersistentVolumes:
+  - name: control1-pv
+    node: control1
+    path: /var/lib/kafka
+  - name: control2-pv
+    node: control2
+    path: /var/lib/kafka
+  - name: control3-pv
+    node: control3
+    path: /var/lib/kafka

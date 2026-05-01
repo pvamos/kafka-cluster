@@ -1,0 +1,18 @@
+{{- if .Values.connectors.s3Sink.enabled }}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaConnector
+metadata:
+  name: {{ .Values.connectors.s3Sink.name | quote }}
+  labels:
+    strimzi.io/cluster: {{ .Values.connectors.s3Sink.connectCluster | quote }}
+spec:
+  class: {{ .Values.connectors.s3Sink.class | quote }}
+  tasksMax: {{ .Values.connectors.s3Sink.tasksMax }}
+  {{- if hasKey .Values.connectors.s3Sink "pause" }}
+  pause: {{ .Values.connectors.s3Sink.pause }}
+  {{- end }}
+  config:
+    {{- range $k, $v := .Values.connectors.s3Sink.config }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+{{- end }}

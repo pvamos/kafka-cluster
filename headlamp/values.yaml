@@ -1,0 +1,50 @@
+# Namespace to deploy to
+namespace: headlamp
+
+image:
+  repository: ghcr.io/headlamp-k8s/headlamp
+  tag: "0.39.0"
+
+headlamp:
+
+  ingress:
+    enabled: true
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: "web"
+      traefik.ingress.kubernetes.io/tls-acme: "false"
+    hosts:
+      - host: headlamp.example.com
+        paths:
+          - path: /
+            type: Prefix
+
+  serviceAccount:
+    create: true
+    name: headlamp-admin
+
+  nodeSelector:
+    node-role.kubernetes.io/worker: "true"
+
+  tolerations:
+    - key: node.kubernetes.io/not-ready
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300
+    - key: node.kubernetes.io/unreachable
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300
+    
+  securityContext:
+    runAsNonRoot: true
+    privileged: false
+    runAsUser: 100
+    runAsGroup: 101
+
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 400m

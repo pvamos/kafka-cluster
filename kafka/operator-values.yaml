@@ -1,0 +1,21 @@
+# Strimzi operator on worker nodes
+nodeSelector:
+  node-role.kubernetes.io/worker: "true"
+
+tolerations:
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+    
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 768Mi
+    cpu: 500m

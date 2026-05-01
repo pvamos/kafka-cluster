@@ -1,0 +1,6 @@
+apiVersion: v2
+name: clickhouse
+description: ClickHouse cluster (Altinity Operator-managed) + Kafka Engine ingest + MV
+type: application
+version: 1.0.0
+appVersion: "25.11"

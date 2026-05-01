@@ -1,0 +1,174 @@
+{{- if .Values.dashboards.import.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "grafana.fullname" . }}-bootstrap
+  labels:
+    {{- include "grafana.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: {{ .Values.dashboards.import.ttlSecondsAfterFinished | default 3600 }}
+  backoffLimit: {{ .Values.dashboards.import.backoffLimit | default 2 }}
+  template:
+    metadata:
+      labels:
+        {{- include "grafana.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      volumes:
+        - name: dashboards
+          configMap:
+            name: {{ include "grafana.fullname" . }}-dashboards
+      containers:
+        - name: bootstrap
+          image: {{ .Values.dashboards.import.image | default "alpine:3.23" | quote }}
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: dashboards
+              mountPath: /dashboards
+              readOnly: true
+          env:
+            - name: GF_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.userKey | quote }}
+            - name: GF_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.passwordKey | quote }}
+
+            - name: GRAFANA_URL
+              value: {{ .Values.dashboards.import.grafanaUrl | default (printf "http://%s:%v" (include "grafana.fullname" .) .Values.service.port) | quote }}
+
+            - name: DASHBOARD_IMPORT_MODE
+              value: {{ .Values.dashboards.import.mode | default "createIfMissing" | quote }}
+
+            - name: HOME_DASHBOARD_ENABLED
+              value: {{ ternary "true" "false" .Values.dashboards.home.enabled | quote }}
+            - name: HOME_DASHBOARD_UID
+              value: {{ .Values.dashboards.home.uid | default "" | quote }}
+            - name: HOME_SCOPE
+              value: {{ .Values.dashboards.home.scope | default "org" | quote }}
+
+          command: ["/bin/sh","-ec"]
+          args:
+            - |
+              set -eu
+
+              echo "Installing bootstrap dependencies (curl, jq)..."
+              apk add --no-cache curl jq >/dev/null
+
+              echo "Waiting for Grafana health endpoint at ${GRAFANA_URL} ..."
+              for i in $(seq 1 {{ .Values.dashboards.import.waitTries | default 300 }}); do
+                code="$(curl -s -o /dev/null -w '%{http_code}' "${GRAFANA_URL}/api/health" || true)"
+                if [ "$code" = "200" ]; then
+                  echo "Grafana is healthy."
+                  break
+                fi
+                sleep {{ .Values.dashboards.import.waitSleepSeconds | default 2 }}
+              done
+
+              code="$(curl -s -o /dev/null -w '%{http_code}' "${GRAFANA_URL}/api/health" || true)"
+              if [ "$code" != "200" ]; then
+                echo "Grafana did not become healthy (last code=$code)."
+                exit 1
+              fi
+
+              mode="${DASHBOARD_IMPORT_MODE}"
+              echo "Dashboard import mode: ${mode}"
+
+              found_any=0
+              for f in /dashboards/*.json; do
+                [ -e "$f" ] || continue
+                found_any=1
+
+                # IMPORTANT: Extract the *top-level* dashboard UID only.
+                # Exported dashboards contain nested "uid" fields (e.g. datasource uid "-- Grafana --").
+                uid="$(jq -r '.uid // empty' "$f")"
+                if [ -z "$uid" ]; then
+                  echo "ERROR: dashboard file $f has no top-level .uid."
+                  exit 1
+                fi
+
+                # Defensive: URL-encode UID in case it ever contains special characters.
+                uid_enc="$(printf '%s' "$uid" | jq -sRr @uri)"
+
+                http="$(curl -s -o /dev/null -w '%{http_code}' \
+                  -u "${GF_ADMIN_USER}:${GF_ADMIN_PASSWORD}" \
+                  "${GRAFANA_URL}/api/dashboards/uid/${uid_enc}" || true)"
+
+                if [ "$http" = "200" ] && [ "$mode" = "createIfMissing" ]; then
+                  echo "Dashboard ${uid} exists -> skipping (preserve UI edits)"
+                  continue
+                fi
+
+                if [ "$http" != "200" ] && [ "$http" != "404" ]; then
+                  echo "ERROR: unexpected status checking uid=${uid}: HTTP ${http}"
+                  exit 1
+                fi
+
+                overwrite=false
+                if [ "$mode" = "overwrite" ]; then overwrite=true; fi
+
+                tmpdash="/tmp/dashboard.json"
+                tmppayload="/tmp/payload.json"
+
+                # Only sanitize top-level id/version; do NOT rewrite nested panel ids.
+                jq '.id=null | .version=0' "$f" > "${tmpdash}"
+
+                # IMPORTANT: do NOT use an unquoted heredoc here; it could expand $__fromTime / $__toTime / ${var}.
+                printf '{"dashboard":%s,"folderId":0,"overwrite":%s}\n' \
+                  "$(cat "${tmpdash}")" "${overwrite}" > "${tmppayload}"
+
+                echo "Importing dashboard uid=${uid} overwrite=${overwrite} from $(basename "$f") ..."
+                rcode="$(curl -s -o /dev/null -w '%{http_code}' \
+                  -u "${GF_ADMIN_USER}:${GF_ADMIN_PASSWORD}" \
+                  -H "Content-Type: application/json" \
+                  -X POST "${GRAFANA_URL}/api/dashboards/db" \
+                  --data-binary @"${tmppayload}" || true)"
+
+                if [ "$rcode" != "200" ]; then
+                  echo "ERROR: import failed for uid=${uid} (HTTP ${rcode})"
+                  exit 1
+                fi
+              done
+
+              if [ "$found_any" = "0" ]; then
+                echo "No dashboards found in /dashboards (no *.json)."
+              fi
+
+              if [ "${HOME_DASHBOARD_ENABLED}" = "true" ] && [ -n "${HOME_DASHBOARD_UID}" ]; then
+                echo "Setting home dashboard uid=${HOME_DASHBOARD_UID} scope=${HOME_SCOPE}"
+
+                home_uid_enc="$(printf '%s' "${HOME_DASHBOARD_UID}" | jq -sRr @uri)"
+
+                dcode="$(curl -s -o /dev/null -w '%{http_code}' \
+                  -u "${GF_ADMIN_USER}:${GF_ADMIN_PASSWORD}" \
+                  "${GRAFANA_URL}/api/dashboards/uid/${home_uid_enc}" || true)"
+
+                if [ "$dcode" != "200" ]; then
+                  echo "ERROR: home dashboard uid ${HOME_DASHBOARD_UID} not found (HTTP $dcode)."
+                  exit 1
+                fi
+
+                if [ "${HOME_SCOPE}" = "user" ]; then
+                  pref="${GRAFANA_URL}/api/user/preferences"
+                else
+                  pref="${GRAFANA_URL}/api/org/preferences"
+                fi
+
+                curl -sS \
+                  -u "${GF_ADMIN_USER}:${GF_ADMIN_PASSWORD}" \
+                  -H "Content-Type: application/json" \
+                  -X PUT "${pref}" \
+                  -d "{\"homeDashboardUID\":\"${HOME_DASHBOARD_UID}\"}"
+
+                echo
+              fi
+
+              echo "Bootstrap complete."
+{{- end }}

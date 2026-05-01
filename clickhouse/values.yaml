@@ -1,0 +1,75 @@
+namespace: clickhouse
+
+chi:
+  name: clickhouse
+  clusterName: cluster01
+  shards: 1
+  replicas: 2
+
+image:
+  server: "clickhouse/clickhouse-server:25.11-alpine"
+  keeper: "clickhouse/clickhouse-keeper:25.11-alpine"
+
+storage:
+  className: longhorn-rf2
+  size: 25Gi
+
+keeper:
+  name: clickhouse-keeper
+  replicas: 3
+  storageSize: 10Gi
+
+kafka:
+  brokers: ""   # set by install.sh --set kafka.brokers=...
+  topic: "sensors"
+  group: "clickhouse-sensors"
+  consumersPerNode: 1
+  authSecretName: "clickhouse-kafka-auth"
+
+proto:
+  filename: "enriched_reading.proto"
+  message: "EnrichedReading"
+
+db:
+  name: "envsensor"
+  table: "readings"
+
+initJob:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 604800  # 7 days
+
+s3Lake:
+  enabled: true
+
+  # Must match the named collection you already define in ClickHouse config.d/60-named-collections-s3.xml
+  namedCollection: "s3_lake"
+
+  # Full URL (including bucket) to match what your connector actually writes.
+  # If your files end with .csv.gz, keep that suffix and ClickHouse will auto-detect compression by extension.
+  url: "https://s3.example.com/envsensor-lake/readings/sensors/dt=*/h=*/*.csv.gz"
+
+  filename: "readings/sensors/dt=*/h=*/*.csv.gz"
+  
+  compression_method: "gzip"
+
+  # Table function format parameter
+  format: "CSV"
+
+  # Explicit schema so ClickHouse does not need to infer it from existing files
+  structure: "time_ns String, topic String, ipv4 String, ipv6 String, user String, clientid String, broker String, mac_hex String, rssi String, batt String, esp32_t String, bme280_t String, bme280_p String, bme280_h String, sht4x_t String, sht4x_h String, kafka_topic String, kafka_partition String, kafka_offset String, kafka_timestamp_ms String, kafka_key String, ingested_at_ms String"
+
+resources:
+  keeper:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  chi:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "1200m"
+      memory: "3072Mi"

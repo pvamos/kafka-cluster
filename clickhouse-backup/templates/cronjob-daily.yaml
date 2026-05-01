@@ -1,0 +1,115 @@
+# clickhouse-backup/templates/cronjob-daily.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "clickhouse-backup.fullname" . }}-daily
+  namespace: {{ .Values.namespace | quote }}
+spec:
+  schedule: {{ .Values.schedules.daily | quote }}
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      template:
+        spec:
+          serviceAccountName: {{ include "clickhouse-backup.fullname" . }}
+          restartPolicy: Never
+          containers:
+            - name: backup-daily
+              image: {{ .Values.images.clickhouseClient | quote }}
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: {{ .Values.resources.backupJob.requests.cpu | quote }}
+                  memory: {{ .Values.resources.backupJob.requests.memory | quote }}
+                limits:
+                  cpu: {{ .Values.resources.backupJob.limits.cpu | quote }}
+                  memory: {{ .Values.resources.backupJob.limits.memory | quote }}
+              env:
+                - name: CH_HOST
+                  value: {{ .Values.clickhouse.host | quote }}
+                - name: CH_PORT
+                  value: {{ .Values.clickhouse.port | quote }}
+                - name: CH_CLUSTER
+                  value: {{ .Values.clickhouse.clusterName | quote }}
+                - name: CH_DB
+                  value: {{ .Values.clickhouse.database | quote }}
+                - name: CH_TABLE
+                  value: {{ .Values.clickhouse.table | quote }}
+                - name: CH_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.authSecretName | quote }}
+                      key: username
+                - name: CH_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.authSecretName | quote }}
+                      key: password
+              command: ["/bin/sh","-ec"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  DATE="$(date -u +%F)"
+                  DEST="{{ .Values.s3.prefix }}/{{ .Values.clickhouse.database }}.{{ .Values.clickhouse.table }}/daily/${DATE}"
+                  MARKER="{{ .Values.s3.prefix }}/{{ .Values.clickhouse.database }}.{{ .Values.clickhouse.table }}/state/daily_done/${DATE}.tsv"
+
+                  echo "Daily full backup: ${CH_DB}.${CH_TABLE} -> S3({{ .Values.s3.namedCollection }}, ${DEST})"
+                  echo "Target ClickHouse: ${CH_HOST}:${CH_PORT}"
+                  echo "Daily marker object: ${MARKER}"
+
+                  LAST_OUT=""
+                  run_ch() {
+                    set +e
+                    LAST_OUT="$(clickhouse-client \
+                      --host "${CH_HOST}" --port "${CH_PORT}" \
+                      --user "${CH_USER}" --password "${CH_PASS}" \
+                      --connect_timeout 5 \
+                      --send_timeout 60 \
+                      --receive_timeout 7200 \
+                      --query "$1" 2>&1)"
+                    rc=$?
+                    set -e
+                    echo "${LAST_OUT}"
+                    return $rc
+                  }
+
+                  backup_q="
+                  BACKUP TABLE ${CH_DB}.${CH_TABLE}
+                  TO S3({{ .Values.s3.namedCollection }}, '${DEST}')
+                  SETTINGS
+                    compression_method='{{ .Values.backup.compressionMethod }}',
+                    compression_level={{ .Values.backup.compressionLevel }}
+                  "
+
+                  # Marker contains a single DateTime value: when daily completed successfully.
+                  marker_q="
+                  INSERT INTO FUNCTION s3({{ .Values.s3.markerNamedCollection }},
+                    filename='${MARKER}',
+                    format='TSV',
+                    structure='ts DateTime')
+                  SELECT now()
+                  SETTINGS s3_truncate_on_insert=1
+                  "
+
+                  if run_ch "${backup_q}"; then
+                    echo "Daily backup succeeded. Writing daily marker..."
+                    run_ch "${marker_q}"
+                    echo "Daily marker written."
+                    exit 0
+                  fi
+
+                  # If the daily already exists (manual reruns / reschedules), treat as success.
+                  # NOTE: In this case we do NOT write the marker, because we didn't actually run a new daily.
+                  if echo "${LAST_OUT}" | grep -q "BACKUP_ALREADY_EXISTS"; then
+                    echo "Daily backup already exists at ${DEST}; treating as success (no marker update)."
+                    exit 0
+                  fi
+
+                  echo "Daily backup failed."
+                  exit 1

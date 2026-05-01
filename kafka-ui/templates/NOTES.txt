@@ -1,0 +1,22 @@
+Kafka UI has been deployed.
+
+To access the UI via port-forward:
+
+  kubectl port-forward svc/{{ .Release.Name }} -n {{ .Values.namespace }} 8080:8080
+  http://localhost:8080
+
+Ingress URL (if enabled):
+
+{{- if .Values.ingress.enabled }}
+  https://{{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+  Ingress not enabled.
+{{- end }}
+
+Kafka UI Login credentials:
+  Username: {{ .Values.kafkaUIauth.uiLogin.username }}
+  Password: {{ .Values.kafkaUIauth.uiLogin.password }}
+
+Kafka backend user (SCRAM):
+  Username: {{ .Values.kafkaUIauth.username }}
+  Secret: Same as KafkaUser Secret in namespace '{{ .Values.namespace }}'

@@ -1,0 +1,71 @@
+apiVersion: "clickhouse-keeper.altinity.com/v1"
+kind: "ClickHouseKeeperInstallation"
+metadata:
+  name: {{ .Values.keeper.name }}
+spec:
+  configuration:
+    clusters:
+      - name: "chk01"
+        layout:
+          replicasCount: {{ .Values.keeper.replicas }}
+    files:
+      # Possible log levels:        
+      # - none (turns off logging)
+      # - fatal
+      # - critical
+      # - error
+      # - warning
+      # - notice
+      # - information
+      # - debug
+      # - trace (default !)
+      # - test (not for production usage)
+      # https://github.com/pocoproject/poco/blob/poco-1.14.2-release/Foundation/include/Poco/Logger.h#L105-L117
+      config.d/99-log_level.xml: |
+        <clickhouse>
+          <logger>
+            <level>information</level>
+          </logger>
+        </clickhouse>
+
+  defaults:
+    templates:
+      podTemplate: default
+      volumeClaimTemplate: keeper-storage
+
+  templates:
+    podTemplates:
+      - name: default
+        metadata:
+          labels:
+            app: clickhouse-keeper
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        app: clickhouse-keeper
+          containers:
+            - name: clickhouse-keeper
+              image: {{ .Values.image.keeper | quote }}
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: {{ .Values.resources.keeper.requests.cpu | quote }}
+                  memory: {{ .Values.resources.keeper.requests.memory | quote }}
+                limits:
+                  cpu: {{ .Values.resources.keeper.limits.cpu | quote }}
+                  memory: {{ .Values.resources.keeper.limits.memory | quote }}
+    volumeClaimTemplates:
+      - name: keeper-storage
+        reclaimPolicy: Retain
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ .Values.keeper.storageSize | quote }}
+          storageClassName: {{ .Values.storage.className | quote }}

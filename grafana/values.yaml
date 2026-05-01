@@ -1,0 +1,103 @@
+namespace: grafana
+
+replicaCount: 1
+
+image:
+  repository: grafana/grafana
+  tag: "12.3.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+persistence:
+  enabled: true
+  storageClassName: longhorn
+  size: 5Gi
+  accessModes: ["ReadWriteOnce"]
+
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+# Used by install.sh only to create the grafana-admin secret if missing.
+# Grafana itself reads credentials from admin.existingSecret above.
+grafanaAdmin:
+  user: "admin"
+  password: "REPLACE_ME"
+
+clickhouse:
+  # Your Altinity service template generates: clickhouse-<chi.name>
+  host: clickhouse-clickhouse.clickhouse.svc.cluster.local
+  port: 8123
+  protocol: http
+  database: envsensor
+
+  existingSecret: grafana-clickhouse-auth
+  userKey: username
+  passwordKey: password
+
+plugins:
+  - grafana-clickhouse-datasource
+
+ingress:
+  enabled: true
+  className: traefik
+  host: grafana.example.com
+  path: /
+  annotations: {}
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 768Mi
+    cpu: 400m
+
+nodeSelector:
+  node-role.kubernetes.io/worker: "true"
+
+tolerations:
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+
+dashboards:
+  # Dashboards are imported via a post-install/post-upgrade Job using the Grafana HTTP API.
+  # This avoids file-provisioning mounts on the Grafana Pod and prevents ConfigMap-related
+  # mount failures / unintended overwrites.
+  import:
+    enabled: true
+
+    # createIfMissing: import only if dashboard UID is not present (preserves UI edits)
+    # overwrite: always import and overwrite existing dashboards on every upgrade
+    mode: createIfMissing
+
+    # Image for the bootstrap job (needs curl + jq; Alpine installs them at runtime)
+    image: "alpine:3.23"
+
+    # Optional override (default is http://<service>:<port>)
+    # grafanaUrl: "http://grafana:80"
+
+    waitTries: 300
+    waitSleepSeconds: 2
+    backoffLimit: 2
+    ttlSecondsAfterFinished: 3600
+
+  home:
+    enabled: true
+    # Your dashboard UID from the exported JSON
+    uid: "ad7zclb"
+
+    # "org" = everyone lands here after login (recommended)
+    # "user" = sets home for the admin user only
+    scope: "org"

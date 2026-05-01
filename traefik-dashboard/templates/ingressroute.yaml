@@ -1,0 +1,51 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "traefik-dashboard.fullname" . }}
+  namespace: {{ .Values.namespace }}
+spec:
+  entryPoints:
+{{- range .Values.ingress.entryPoints }}
+    - {{ . | quote }}
+{{- end }}
+  routes:
+    # Main route: dashboard UI and API
+    - match: Host(`{{ .Values.ingress.host }}`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`){{- range .Values.ingress.extraPathPrefixes }} || PathPrefix(`{{ . }}`){{- end }})
+      kind: Rule
+      middlewares:
+{{- if .Values.basicAuth.enabled }}
+        - name: {{ include "traefik-dashboard.fullname" . }}-basicauth
+{{- end }}
+{{- if .Values.ipAllowList.enabled }}
+        - name: {{ include "traefik-dashboard.fullname" . }}-ipallow
+{{- end }}
+{{- range .Values.extraMiddlewares }}
+        - name: {{ . }}
+{{- end }}
+      services:
+        - name: api@internal
+          kind: TraefikService
+
+{{- if .Values.dashboardAppendSlashRedirect }}
+    # Redirect "/dashboard" (no slash) -> "/dashboard/"
+    - match: Host(`{{ .Values.ingress.host }}`) && Path(`/dashboard`)
+      kind: Rule
+      middlewares:
+        - name: {{ include "traefik-dashboard.fullname" . }}-dash-append-slash
+      services:
+        - name: noop@internal
+          kind: TraefikService
+{{- end }}
+
+{{- if .Values.dashboardRootRedirect }}
+    # Redirect "/" -> "/dashboard/"
+    - match: Host(`{{ .Values.ingress.host }}`) && Path(`/`)
+      kind: Rule
+      middlewares:
+        - name: {{ include "traefik-dashboard.fullname" . }}-root-redirect
+      services:
+        - name: noop@internal
+          kind: TraefikService
+{{- end }}
+{{- end }}

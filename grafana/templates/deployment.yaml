@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "grafana.fullname" . }}
+  labels:
+    {{- include "grafana.labels" . | nindent 4 }}
+
+spec:
+  replicas: {{ .Values.replicaCount }}
+
+  # For a single-replica deployment with an RWO PVC, avoid RollingUpdate surge to prevent
+  # multi-attach / deadlocked rollouts. Recreate guarantees old pod is terminated first.
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      {{- include "grafana.selectorLabels" . | nindent 6 }}
+
+  template:
+    metadata:
+      labels:
+        {{- include "grafana.selectorLabels" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 10
+
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+
+      securityContext:
+        fsGroup: 472
+        fsGroupChangePolicy: "OnRootMismatch"
+
+      containers:
+        - name: grafana
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          securityContext:
+            runAsUser: 472
+            runAsGroup: 472
+            allowPrivilegeEscalation: false
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+
+          env:
+            # install plugin (cached on PVC under /var/lib/grafana)
+            - name: GF_INSTALL_PLUGINS
+              value: {{ join "," .Values.plugins | quote }}
+
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.userKey | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.passwordKey | quote }}
+
+            - name: CH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clickhouse.existingSecret | quote }}
+                  key: {{ .Values.clickhouse.userKey | quote }}
+            - name: CH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clickhouse.existingSecret | quote }}
+                  key: {{ .Values.clickhouse.passwordKey | quote }}
+
+          volumeMounts:
+            - name: storage
+              mountPath: /var/lib/grafana
+
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources
+
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+      volumes:
+        - name: provisioning
+          configMap:
+            name: {{ include "grafana.fullname" . }}-provisioning
+            items:
+              - key: datasources.yaml
+                path: datasources.yaml
+
+        - name: storage
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "grafana.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

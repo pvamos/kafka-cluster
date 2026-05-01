@@ -1,0 +1,55 @@
+namespace: kafka
+
+kafka:
+  clusterName: gravelines
+  uiClusterName: Gravelines
+
+image:
+  repository: kafbat/kafka-ui
+  tag: v1.4.2
+
+kafkaUIauth:
+  username: kafka-ui-admin
+  type: scram-sha-512
+  # Optional: UI login prompt
+  uiLogin:
+    enabled: true
+    username: admin
+    password: REPLACE_ME
+
+ingress:
+  enabled: true
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/tls-acme: false
+  hosts:
+    - host: kafka.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+nodeSelector:
+  node-role.kubernetes.io/worker: "true"
+
+tolerations:
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 1024Mi
+    cpu: 900m
+
+# pin the JVM heap instead of relying on cgroups v2
+javaOpts: "-Xms512m -Xmx512m"
+
+logLevel: "info"

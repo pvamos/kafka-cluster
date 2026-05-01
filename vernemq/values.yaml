@@ -1,0 +1,259 @@
+# vernemq/values.yaml
+
+namespace: vernemq
+
+# -------------------------------------------------------------------
+# Image
+# -------------------------------------------------------------------
+image:
+  repository: reg.example.com/envsensor/vernemq-enrich-msg
+  tag: "0.0.62"
+  pullPolicy: IfNotPresent
+  pullSecrets:
+    - envsensor-reg
+
+# -------------------------------------------------------------------
+# Replicas & Scheduling
+# -------------------------------------------------------------------
+replicaCount: 3
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
+
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+affinity: {}
+
+# -------------------------------------------------------------------
+# Resources
+# -------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1792Mi
+
+# -------------------------------------------------------------------
+# ServiceAccount / RBAC
+# -------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""        # if empty, fullname is used
+
+rbac:
+  create: true
+
+# -------------------------------------------------------------------
+# Listeners
+#   - external: NodePort 31883 for HAProxy (PROXY v2)
+#   - internal: ClusterIP 1883 for all in-cluster traffic, probes, and headless svc
+# -------------------------------------------------------------------
+listeners:
+  externalProxy:
+    port: 31883        # containerPort for external listener
+    proxyProtocol: true
+  internalPlain:
+    enabled: true
+    port: 1883         # containerPort for internal listener
+
+# -------------------------------------------------------------------
+# Probes (use the internal listener)
+# -------------------------------------------------------------------
+probes:
+  liveness:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 1
+    failureThreshold: 3
+
+# -------------------------------------------------------------------
+# Kubernetes Discovery for clustering (VerneMQ envs)
+# -------------------------------------------------------------------
+cluster:
+  kubernetes:
+    enabled: true
+    namespaceOverride: ""
+    labelSelector: "app.kubernetes.io/name=vernemq"
+
+# -------------------------------------------------------------------
+# Persistence for per-pod data (StatefulSet volumeClaimTemplates)
+# -------------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClassName: longhorn
+  accessModes: ["ReadWriteOnce"]
+  size: 2Gi
+
+# -------------------------------------------------------------------
+# Shared RWX auth file (vmq.passwd) + bootstrap Job
+# -------------------------------------------------------------------
+authFile:
+  enabled: true
+  mountPath: /etc/vernemq/auth
+  passwordFile: vmq.passwd
+  aclFile: vmq.acl
+  reloadNonce: ""
+
+  pvc:
+    enabled: true
+    storageClassName: longhorn
+    accessModes: ["ReadWriteMany"]
+    size: 256Mi
+
+  bootstrap:
+    enabled: true
+    image: reg.example.com/envsensor/vernemq-enrich-msg:0.0.62
+    pullPolicy: IfNotPresent
+    backoffLimit: 3
+    users:
+      - username: "admin"
+        password: "REPLACE_ME"
+      - username: "kafka-connect"
+        password: "REPLACE_ME"
+      - username: "city1.site1"
+        password: "REPLACE_ME"
+      - username: "city2.site2"
+        password: "REPLACE_ME"
+
+# -------------------------------------------------------------------
+# bootstrap Job ACL rules config 
+# -------------------------------------------------------------------
+
+  aclContent: |
+    user admin
+    topic read #
+    topic write #
+    user kafka-connect
+    topic read envsensor-enriched/#
+    user city1.site1
+    topic write envsensor/city1/site1/#
+    user city2.site2
+    topic write envsensor/city2/site2/#
+
+# -------------------------------------------------------------------
+# Services
+#   - Headless: pod identity; targets INTERNAL port 1883
+#   - Internal: ClusterIP 1883 for in-cluster clients
+#   - External: NodePort 31883 for HAProxy (PROXY v2)
+# -------------------------------------------------------------------
+service:
+  headless:
+    enabled: true
+    name: vernemq
+    port: 1883                         # targets mqtt-int (internal) on pods
+    publishNotReadyAddresses: true
+    annotations: {}
+
+  internal:
+    enabled: true
+    name: vernemq-internal
+    port: 1883
+    type: ClusterIP
+    annotations: {}
+
+  external:
+    enabled: true
+    name: vernemq-external
+    port: 31883                        # service port (mirrors container & nodePort)
+    nodePort: 31883                    # fixed NodePort
+    type: NodePort
+    externalTrafficPolicy: Local
+    annotations: {}
+
+# -------------------------------------------------------------------
+# Enrich plugin (MQTT → MQTT republish on the same broker)
+# Protobuf-only redesign:
+# - accepts ONLY envsensor.Reading protobuf
+# - outputs ONLY envsensor.vernemq.EnrichedReading protobuf
+# - no json mode, no per-rule "mode", no VMQ_ENRICH_FORMAT
+# -------------------------------------------------------------------
+enrich:
+  enabled: true
+
+  # Only process publishes whose topics match these patterns.
+  # Comma-separated MQTT wildcards (+ and #). "" = accept all.
+  accept: "envsensor/#"
+
+  # First matching rule wins. {1},{2},... are wildcard captures.
+  # {topic} = full original topic.
+  topicMap:
+    - in: "envsensor/#"
+      out: "envsensor-enriched/{1}"
+
+  # Optional fallback output topic if accepted but no topicMap matches.
+  # Supports {topic}. If empty/unset, messages with no match are dropped.
+  defaultTarget: ""
+
+  # QoS for the republished enriched message.
+  qos: 1
+
+  # Drop if the final enriched output exceeds this many bytes (protobuf bytes).
+  # 1 MiB
+  maxOutputSize: "1048576"
+
+  # Optional metadata fields in EnrichedReading
+  includeTopic: true
+  includeUser: true
+  includeClientId: true
+  includeBroker: true
+
+  # Log level (plugin-internal)
+  # debug | info | warning | error
+  logLevel: "info"
+
+  # Debug: log first 64 bytes of raw inbound payload.
+  logPayloadSample: false
+
+# -------------------------------------------------------------------
+# Extra env for the container (merged into the pod)
+# -------------------------------------------------------------------
+extraEnv: []
+
+# -------------------------------------------------------------------
+# Pod annotations
+# -------------------------------------------------------------------
+podAnnotations: {}
+
+# -------------------------------------------------------------------
+# Pod security contexts
+# -------------------------------------------------------------------
+podSecurityContext:
+  fsGroup: 10000
+  runAsUser: 10000
+  runAsGroup: 10000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+
+# -------------------------------------------------------------------
+# Topology spread (optional)
+# -------------------------------------------------------------------
+topologySpreadConstraints: []
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# --- VerneMQ log level ---
+logging:
+  # options: off | file | console | both
+  console: "console"
+  # debug | info | warning | error
+  level: "info"

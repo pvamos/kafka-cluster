@@ -1,0 +1,5 @@
+apiVersion: v2
+name: longhorn-ui
+description: Expose Longhorn UI with Traefik and Basic Auth
+type: application
+version: 1.0.0
