@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite the archived software release and the associated thesis."
+type: software
+authors:
+  - family-names: "Vámos"
+    given-names: "Péter"
+    orcid: "https://orcid.org/0009-0004-8554-5014"
+    affiliation: "John Wesley Theological College, Budapest"
+title: "Kubernetes data platform for an environmental sensor network"
+version: "1.0.0"
+repository-code: "https://github.com/pvamos/kafka-cluster"
+license: MIT
+keywords:
+  - "environmental monitoring"
+  - "sensor network"
+  - "Kubernetes"
+  - "Apache Kafka"
+  - "Kafka Connect"
+  - "VerneMQ"
+  - "ClickHouse"
+  - "Grafana"
+  - "Helm"
+abstract: >-
+  Helm-based deployment of the messaging, ingestion, storage and visualisation platform used by a scalable environmental sensor network, including VerneMQ, Apache Kafka, Kafka Connect, ClickHouse and Grafana.

@@ -25,7 +25,7 @@ basicAuth:
 ipAllowList:
   enabled: false
   sourceRange:
-    - 194.164.62.184/32   # adjust to your HAProxy egress IPs
+    - 203.0.113.184/32   # adjust to your HAProxy egress IPs
   ipStrategy:
     useXForwardedFor: true
 
