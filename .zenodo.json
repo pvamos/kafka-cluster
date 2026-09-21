@@ -1,0 +1,40 @@
+{
+  "creators": [
+    {
+      "name": "Vámos, Péter",
+      "orcid": "0009-0004-8554-5014",
+      "affiliation": "John Wesley Theological College, Budapest"
+    }
+  ],
+  "title": "Kubernetes data platform for an environmental sensor network",
+  "description": "Helm-based deployment of the messaging, ingestion, storage and visualisation platform used by a scalable environmental sensor network, including VerneMQ, Apache Kafka, Kafka Connect, ClickHouse and Grafana.",
+  "version": "1.0.0",
+  "access_right": "open",
+  "license": "mit",
+  "upload_type": "software",
+  "language": "eng",
+  "keywords": [
+    "environmental monitoring",
+    "sensor network",
+    "Kubernetes",
+    "Apache Kafka",
+    "Kafka Connect",
+    "VerneMQ",
+    "ClickHouse",
+    "Grafana",
+    "Helm"
+  ],
+  "related_identifiers": [
+    {
+      "scheme": "doi",
+      "identifier": "10.5281/zenodo.22843091",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-dissertation"
+    },
+    {
+      "scheme": "url",
+      "identifier": "https://github.com/pvamos/environmental-sensor-network",
+      "relation": "isPartOf"
+    }
+  ]
+}

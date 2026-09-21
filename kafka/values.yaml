@@ -151,8 +151,7 @@ kafkaUIauth:
   uiLogin:
     enabled: true
     username: admin
-    password: x1M30rVrBa8W
-
+    password: "CHANGE_ME_KAFKA_UI_PASSWORD"
 # Kafka topics auto-creation
 topics:
   - name: sensors
